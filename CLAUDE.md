@@ -2,7 +2,11 @@
 
 Produto: o radiologista dita um comando curto ("essa tomo é uma diverticulite do colo direito
 não complicada"), o sistema seleciona a máscara de laudo do próprio médico, aplica os achados
-ditados e devolve o laudo completo no clipboard. Plano completo em `docs/decisoes.md`.
+ditados e devolve o laudo completo no clipboard.
+
+## 👉 AO RETOMAR: leia `docs/ESTADO.md` primeiro
+É o ponto de retomada — estado atual, como rodar, arquitetura, pendências e backlog.
+Plano original e decisões em `docs/decisoes.md`.
 
 ## Regras de privacidade (INEGOCIÁVEIS)
 
@@ -42,8 +46,12 @@ ditados e devolve o laudo completo no clipboard. Plano completo em `docs/decisoe
 
 ## Comandos
 
-- `npm run laudo -- texto "<comando ditado>"` — pipeline sem áudio (para testes)
-- `npm run laudo -- gravar` — grava do microfone (ffmpeg) e roda o pipeline
-- `npm run laudo -- <arquivo.m4a|wav>` — transcreve um áudio e roda o pipeline
-- `npm run sanitize -- <pdfs...>` — extrai texto local + anonimiza (gera .txt sanitizado)
-- `npm test` / `npm run typecheck` / `npm run eval`
+App (de qualquer pasta, via wrapper global): `laudo-app` (Electron), `laudo <sub>` (CLI).
+- `laudo texto "<comando>"` [`--sonnet` | `--kimi` | `--mask <id>` | `--perfil <id>`] — pipeline sem áudio
+- `laudo gravar` / `laudo caso` / `laudo eval` / `laudo masks`
+- `laudo destilar <id> <PREFIXO> [--contendo "…"]` — cria máscara-consenso do acervo
+- `laudo aprender [<id>|todos]` — re-extrai Regras do Médico (com ordem canônica)
+- `npm run sanitize -- <pasta>` — extrai texto local + anonimiza
+- Dentro de `app/`: `npm run dev` | `build:app` | `dist` | `test` | `typecheck` | `eval`
+
+Detalhes e backlog: `docs/ESTADO.md`.
