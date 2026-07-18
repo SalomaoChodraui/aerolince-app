@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build:app": "electron-vite build",
+    "dist": "electron-vite build && electron-builder --mac dmg --win nsis",
     "laudo": "tsx src/cli/index.ts",
     "sanitize": "tsx scripts/sanitize-pdfs.ts",
     "test": "vitest run",

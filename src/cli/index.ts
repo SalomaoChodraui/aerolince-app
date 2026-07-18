@@ -234,7 +234,10 @@ async function aprender(target: string) {
   mkdirSync(regrasDir, { recursive: true });
   for (const m of alvo) {
     const id = m.id;
-    const files = corpusFiles(sanDir, m.prefixos, 60);
+    const files = corpusFiles(sanDir, m.prefixos, 60, {
+      contendo: m.corpus_contendo,
+      sem: m.corpus_sem,
+    });
     if (files.length === 0) {
       console.warn(`nenhum laudo sanitizado para ${id} (prefixos: ${m.prefixos.join(', ')})`);
       continue;

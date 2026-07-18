@@ -11,6 +11,9 @@ export const MaskFrontmatterSchema = z.object({
   origem: z.enum(['importado-pdf', 'consenso', 'manual']).default('manual'),
   /** Prefixos dos arquivos do acervo que alimentam esta máscara (aprender/destilar). */
   prefixos: z.array(z.string()).default([]),
+  /** Filtros de conteúdo do corpus do `aprender` (ex.: separar com/sem contraste). */
+  corpus_contendo: z.string().optional(),
+  corpus_sem: z.string().optional(),
 });
 
 export type MaskFrontmatter = z.infer<typeof MaskFrontmatterSchema>;

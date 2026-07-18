@@ -6,6 +6,11 @@ const api = {
   processarTexto: (texto: string): Promise<{ ok: boolean; erro?: string }> =>
     ipcRenderer.invoke('processar-texto', texto),
   copiar: (texto: string): Promise<void> => ipcRenderer.invoke('copiar', texto),
+  refinarAudio: (buf: ArrayBuffer): Promise<{ ok: boolean; erro?: string }> =>
+    ipcRenderer.invoke('refinar-audio', buf),
+  refinarTexto: (texto: string): Promise<{ ok: boolean; erro?: string }> =>
+    ipcRenderer.invoke('refinar-texto', texto),
+  desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),
   gravando: (on: boolean): void => ipcRenderer.send('gravando', on),
   onAtalhoToggle: (cb: () => void): void => {
     ipcRenderer.on('atalho-toggle', cb);

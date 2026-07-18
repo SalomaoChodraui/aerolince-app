@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 interface Resultado {
@@ -11,11 +11,17 @@ interface Resultado {
   savedPath: string;
 }
 
+type RefinoFase = 'idle' | 'gravando' | 'processando';
+
 function App() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [texto, setTexto] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [refinoFase, setRefinoFase] = useState<RefinoFase>('idle');
+  const [refinoTexto, setRefinoTexto] = useState('');
+  const recorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
 
   useEffect(() => {
     window.aerolince.onResultado((p) => {
@@ -24,14 +30,47 @@ function App() {
       setTexto(r.report);
       setErro(null);
       setCopiado(false);
+      setRefinoFase('idle');
     });
-    window.aerolince.onResultadoErro((msg) => setErro(msg));
+    window.aerolince.onResultadoErro((msg) => {
+      setErro(msg);
+      setRefinoFase('idle');
+    });
   }, []);
 
   async function copiar() {
     await window.aerolince.copiar(texto);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
+  }
+
+  async function toggleRefinoVoz() {
+    if (refinoFase === 'gravando') {
+      recorder.current?.stop();
+      recorder.current = null;
+      return;
+    }
+    if (refinoFase !== 'idle') return;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    chunks.current = [];
+    rec.ondataavailable = (e) => chunks.current.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      setRefinoFase('processando');
+      const blob = new Blob(chunks.current, { type: 'audio/webm' });
+      void window.aerolince.refinarAudio(await blob.arrayBuffer());
+    };
+    rec.start();
+    recorder.current = rec;
+    setRefinoFase('gravando');
+  }
+
+  async function aplicarRefinoTexto() {
+    if (!refinoTexto.trim() || refinoFase !== 'idle') return;
+    setRefinoFase('processando');
+    setRefinoTexto('');
+    void window.aerolince.refinarTexto(refinoTexto.trim());
   }
 
   const totalS = resultado
@@ -62,6 +101,26 @@ function App() {
             <span className="status">
               já copiado automaticamente · {totalS}s · US$ {resultado.custoUSD.toFixed(4)}
             </span>
+          </div>
+          <div className="acoes refino">
+            <button
+              className={refinoFase === 'gravando' ? 'gravando' : ''}
+              onClick={toggleRefinoVoz}
+              disabled={refinoFase === 'processando'}
+              title="Dite um ajuste, ex.: 'acrescenta cisto renal esquerdo de 2 cm'"
+            >
+              {refinoFase === 'gravando' ? '⏹ Parar e aplicar' : refinoFase === 'processando' ? '… aplicando' : '🎙️ Refinar por voz'}
+            </button>
+            <input
+              value={refinoTexto}
+              onChange={(e) => setRefinoTexto(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && aplicarRefinoTexto()}
+              placeholder="ou digite o ajuste e ENTER"
+              disabled={refinoFase !== 'idle'}
+            />
+            <button onClick={() => void window.aerolince.desfazer()} disabled={refinoFase !== 'idle'} title="Volta uma versão do refino">
+              ↩ Desfazer
+            </button>
           </div>
         </>
       ) : (

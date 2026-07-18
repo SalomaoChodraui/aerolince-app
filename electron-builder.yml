@@ -1,0 +1,23 @@
+appId: com.aerolince.laudo
+productName: Aerolince
+directories:
+  output: release
+files:
+  - out/**
+  - package.json
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.medical
+  extendInfo:
+    NSMicrophoneUsageDescription: 'O Aerolince usa o microfone para o ditado dos laudos.'
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: true
+  # pt-BR
+  language: '1046'
+npmRebuild: false

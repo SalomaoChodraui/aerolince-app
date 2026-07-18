@@ -52,6 +52,10 @@ export const GLOSSARIO_PADRAO = [
   'ASPECTS',
   'abaulamento discal',
   'hipodensidade',
+  'grupamento calicial',
+  'coxofemoral',
+  'loja da vesícula biliar',
+  'clips metálicos',
 ];
 
 /**

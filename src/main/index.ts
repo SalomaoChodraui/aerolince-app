@@ -2,7 +2,16 @@ import 'dotenv/config';
 import { join } from 'node:path';
 import { BrowserWindow, app, clipboard, globalShortcut, ipcMain, screen, systemPreferences } from 'electron';
 import { saveReport, saveSidecar } from '../core/output/output.js';
-import { ResultadoLaudo, getOutputDir, initPipeline, processarAudio, processarTexto } from './pipeline.js';
+import {
+  ResultadoLaudo,
+  desfazer,
+  getOutputDir,
+  initPipeline,
+  processarAudio,
+  processarTexto,
+  refinarAudio,
+  refinarTexto,
+} from './pipeline.js';
 
 let floatWin: BrowserWindow | null = null;
 let resultWin: BrowserWindow | null = null;
@@ -95,6 +104,15 @@ app.whenReady().then(() => {
 
   ipcMain.handle('processar-audio', (_e, ab: ArrayBuffer) => processar(() => processarAudio(Buffer.from(ab))));
   ipcMain.handle('processar-texto', (_e, texto: string) => processar(() => processarTexto(texto)));
+  ipcMain.handle('refinar-audio', (_e, ab: ArrayBuffer) => processar(() => refinarAudio(Buffer.from(ab))));
+  ipcMain.handle('refinar-texto', (_e, texto: string) => processar(() => refinarTexto(texto)));
+  ipcMain.handle('desfazer', () => {
+    const r = desfazer();
+    if (!r) return { ok: false };
+    clipboard.writeText(r.report);
+    resultWin?.webContents.send('resultado', { ...r, savedPath: '(versão anterior — clipboard atualizado)' });
+    return { ok: true };
+  });
   ipcMain.handle('copiar', (_e, texto: string) => {
     clipboard.writeText(texto);
   });
