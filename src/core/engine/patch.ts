@@ -18,7 +18,7 @@
  */
 
 export interface PatchOp {
-  tipo: 'substituir' | 'inserir-apos' | 'titulo' | 'tecnica' | 'sem-alteracoes';
+  tipo: 'substituir' | 'inserir-apos' | 'inserir-antes' | 'titulo' | 'tecnica' | 'sem-alteracoes';
   alvo?: string;
   novoId?: string;
   texto: string;
@@ -51,16 +51,23 @@ export function parsePatches(raw: string): PatchOp[] {
     }
     flush();
     const header = m[1]!.toLowerCase();
+    const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
     if (header === 'sem-alteracoes') current = { tipo: 'sem-alteracoes', texto: '' };
-    else if (header === 'titulo') current = { tipo: 'titulo', texto: '' };
-    else if (header === 'tecnica') current = { tipo: 'tecnica', texto: '' };
+    else if (semAcento(header) === 'titulo') current = { tipo: 'titulo', texto: '' };
+    else if (semAcento(header) === 'tecnica') current = { tipo: 'tecnica', texto: '' };
     else if (header.startsWith('substituir:')) {
-      current = { tipo: 'substituir', alvo: header.slice('substituir:'.length).trim(), texto: '' };
-    } else if (header.startsWith('inserir-apos:')) {
-      const resto = header.slice('inserir-apos:'.length);
+      const alvo = header.slice('substituir:'.length).trim();
+      const alvoN = semAcento(alvo);
+      // Tolerância: o modelo às vezes usa "substituir: tecnica/titulo" em vez do cabeçalho próprio
+      if (alvoN === 'tecnica') current = { tipo: 'tecnica', texto: '' };
+      else if (alvoN === 'titulo') current = { tipo: 'titulo', texto: '' };
+      else current = { tipo: 'substituir', alvo, texto: '' };
+    } else if (header.startsWith('inserir-apos:') || header.startsWith('inserir-antes:')) {
+      const tipo = header.startsWith('inserir-antes:') ? 'inserir-antes' : 'inserir-apos';
+      const resto = header.slice(header.indexOf(':') + 1);
       const [alvo, idParte] = resto.split('|');
       current = {
-        tipo: 'inserir-apos',
+        tipo,
         alvo: alvo!.trim(),
         novoId: idParte?.replace(/^\s*id:\s*/, '').trim() || 'novo',
         texto: '',
@@ -111,6 +118,9 @@ export function applyPatches(maskBody: string, ops: PatchOp[]): string {
     if (op.tipo === 'substituir') {
       const markerLen = body.slice(start).indexOf('\n') + 1;
       body = body.slice(0, start + markerLen) + op.texto + body.slice(end);
+    } else if (op.tipo === 'inserir-antes') {
+      const inserido = `<!-- orgao: ${op.novoId} -->\n${op.texto}\n\n`;
+      body = body.slice(0, start) + inserido + body.slice(start);
     } else {
       // inserir-apos
       const inserido = `\n\n<!-- orgao: ${op.novoId} -->\n${op.texto}`;
@@ -123,7 +133,7 @@ export function applyPatches(maskBody: string, ops: PatchOp[]): string {
 /** Ids alterados/inseridos — vira o diff exato mostrado ao médico. */
 export function patchedIds(ops: PatchOp[]): string[] {
   return ops
-    .filter((o) => o.tipo === 'substituir' || o.tipo === 'inserir-apos')
-    .map((o) => (o.tipo === 'inserir-apos' ? (o.novoId ?? 'novo') : o.alvo!))
+    .filter((o) => o.tipo === 'substituir' || o.tipo === 'inserir-apos' || o.tipo === 'inserir-antes')
+    .map((o) => (o.tipo === 'substituir' ? o.alvo! : (o.novoId ?? 'novo')))
     .concat(ops.some((o) => o.tipo === 'titulo' || o.tipo === 'tecnica') ? ['tecnica'] : []);
 }

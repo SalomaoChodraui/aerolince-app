@@ -50,6 +50,24 @@ Fratura do platô tibial lateral.`;
     expect(out).toBe(MASK);
   });
 
+  it('inserir-antes cria bloco acima do alvo (achado que abre o laudo)', () => {
+    const out = applyPatches(
+      MASK,
+      parsePatches('@@ inserir-antes: ossos | id: coluna\nEspondilose torácica.'),
+    );
+    expect(out.indexOf('Espondilose torácica.')).toBeLessThan(out.indexOf('Estruturas ósseas'));
+    expect(out).toContain('<!-- orgao: coluna -->\nEspondilose torácica.');
+  });
+
+  it('tolera "@@ substituir: tecnica" e "@@ substituir: titulo" (alvo especial)', () => {
+    const out = applyPatches(
+      MASK,
+      parsePatches('@@ substituir: tecnica\nImagens com artefato de movimento.'),
+    );
+    expect(out).toContain('Técnica:\n\nImagens com artefato de movimento.');
+    expect(out).toContain('Análise:');
+  });
+
   it('patch de técnica substitui só o parágrafo da técnica', () => {
     const out = applyPatches(
       MASK,
