@@ -21,6 +21,7 @@ import { generate, selectMask } from '../core/engine/engine.js';
 import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
+import { matchLocal } from '../core/masks/matcher.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
 import { OpenAISTT } from '../core/stt/openai.js';
 
@@ -31,7 +32,7 @@ function parseArgs(argv: string[]) {
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--fast' || a === '--dry-run') flags.set(a.slice(2), true);
+    if (a === '--fast' || a === '--dry-run' || a === '--sonnet') flags.set(a.slice(2), true);
     else if (a === '--mask' || a === '--perfil' || a === '--contendo' || a === '--sem') flags.set(a.slice(2), argv[++i] ?? '');
     else positional.push(a);
   }
@@ -63,6 +64,7 @@ async function runPipeline(opts: {
   maskId?: string;
   perfil?: string;
   fast?: boolean;
+  sonnet?: boolean;
   dryRun?: boolean;
 }) {
   const config = loadConfig(APP_ROOT);
@@ -99,6 +101,13 @@ async function runPipeline(opts: {
   let selCost = 0;
   let confianca = 'manual';
   if (!mask) {
+    const local = matchLocal(transcript, masks);
+    if (local) {
+      mask = local;
+      confianca = 'alta (seleção local, custo zero)';
+    }
+  }
+  if (!mask) {
     const sel = await selectMask(llm, config.llm.selectionModel, transcript, masks);
     selMs = sel.durationMs;
     selCost = estimateCostUSD(config.llm.selectionModel, sel.usage);
@@ -114,7 +123,11 @@ async function runPipeline(opts: {
   console.log(`Máscara: ${mask.nome} [${mask.id}] (confiança: ${confianca}, ${fmt(selMs)})`);
 
   // Geração
-  const genModel = opts.fast ? config.llm.fastModel : config.llm.generationModel;
+  const genModel = opts.sonnet
+    ? 'claude-sonnet-5'
+    : opts.fast
+      ? config.llm.fastModel
+      : config.llm.generationModel;
   process.stdout.write(`Gerando laudo (${genModel})… `);
   const regras = loadRegras(config, mask.id);
   const gen = await generate(llm, {
@@ -380,6 +393,7 @@ async function main() {
     maskId: flags.get('mask') as string | undefined,
     perfil: flags.get('perfil') as string | undefined,
     fast: Boolean(flags.get('fast')),
+    sonnet: Boolean(flags.get('sonnet')),
     dryRun: Boolean(flags.get('dry-run')),
   };
 

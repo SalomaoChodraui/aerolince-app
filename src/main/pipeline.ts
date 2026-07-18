@@ -10,6 +10,7 @@ import { loadProfile, loadRegras } from '../core/contexto.js';
 import { generate, selectMask } from '../core/engine/engine.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { loadLibrary } from '../core/masks/library.js';
+import { matchLocal } from '../core/masks/matcher.js';
 import { OpenAISTT } from '../core/stt/openai.js';
 
 export interface ResultadoLaudo {
@@ -51,7 +52,10 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
   const masks = loadLibrary(config.masksDir);
   const llm = new LLMClient();
 
-  const sel = await selectMask(llm, config.llm.selectionModel, transcript, masks);
+  const local = matchLocal(transcript, masks);
+  const sel = local
+    ? { mask: local, confianca: 'alta' as const, durationMs: 0, usage: null }
+    : await selectMask(llm, config.llm.selectionModel, transcript, masks);
   if (!sel.mask) {
     throw new Error(
       `não identifiquei o exame (confiança ${sel.confianca}). Diga o nome do exame no comando — ex.: "tomografia de abdome…"`,
@@ -82,7 +86,7 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
     },
     custoUSD: Number(
       (
-        estimateCostUSD(config.llm.selectionModel, sel.usage) +
+        (sel.usage ? estimateCostUSD(config.llm.selectionModel, sel.usage) : 0) +
         estimateCostUSD(config.llm.generationModel, gen.usage)
       ).toFixed(4),
     ),

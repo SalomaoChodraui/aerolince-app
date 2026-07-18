@@ -13,7 +13,9 @@ export const ConfigSchema = z.object({
   }),
   llm: z.object({
     selectionModel: z.string().default('claude-haiku-4-5'),
-    generationModel: z.string().default('claude-sonnet-5'),
+    // Haiku por padrão (modo patch tornou a tarefa de edição leve); para "modo
+    // qualidade" com Sonnet: laudo.config.json {"llm":{"generationModel":"claude-sonnet-5"}}
+    generationModel: z.string().default('claude-haiku-4-5'),
     fastModel: z.string().default('claude-haiku-4-5'),
   }),
 });
@@ -65,7 +67,7 @@ export function loadConfig(appRoot: string): Config {
     stt: { model: 'gpt-4o-transcribe', glossario: GLOSSARIO_PADRAO },
     llm: {
       selectionModel: 'claude-haiku-4-5',
-      generationModel: 'claude-sonnet-5',
+      generationModel: 'claude-haiku-4-5',
       fastModel: 'claude-haiku-4-5',
     },
   };

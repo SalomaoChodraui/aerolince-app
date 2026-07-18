@@ -23,47 +23,38 @@ export function selectionUser(transcript: string): string {
   return `Comando ditado: "${transcript}"`;
 }
 
-/** Regras de geração — bloco estável, cacheável. */
-export const GENERATION_RULES = `Você é o motor de geração de laudos de um sistema usado por radiologistas. Você recebe uma MÁSCARA (o laudo-modelo do próprio médico, com o fraseado exato dele) e um COMANDO DITADO com os achados. Sua tarefa é devolver o laudo final completo.
+/** Regras de geração — bloco estável, cacheável. MODO PATCH: o modelo emite só o que muda. */
+export const GENERATION_RULES = `Você é o motor de edição de laudos de um sistema usado por radiologistas. No contexto há uma MÁSCARA (o laudo-modelo do próprio médico, com blocos marcados por <!-- orgao: id --> e <!-- impressao -->) e você recebe um COMANDO DITADO com os achados. Sua tarefa é emitir APENAS OS PATCHES — os blocos que precisam mudar. O sistema monta o laudo final localmente; tudo que você não tocar permanece exatamente como está na máscara.
 
-REGRAS INEGOCIÁVEIS:
-1. Reproduza a máscara LITERALMENTE — mesmas frases, mesma ordem, mesmos títulos de seção — exceto nos blocos afetados pelos achados ditados.
-2. Para cada órgão citado no comando: substitua a frase normal desse órgão pela descrição patológica, incorporando EXATAMENTE as medidas, densidades e lateralidade ditadas (ex.: "1,0 cm", "500 UH", "à direita"). Escreva a frase patológica no mesmo estilo conciso da máscara.
-3. CONSISTÊNCIA GLOBAL: um achado pode afetar MAIS DE UM bloco. Depois de aplicar as substituições, releia TODAS as frases normais restantes e corrija qualquer uma que contradiga os achados ditados. Frases compostas de negação ("Ausência de X ou Y") devem ser divididas quando só uma parte deixou de ser verdadeira: descreva X conforme ditado e mantenha "Ausência de Y." em linha própria. É ERRO GRAVE o laudo afirmar um achado e ao mesmo tempo manter a frase que nega esse achado.
-4. NUNCA invente achados, medidas, lateralidade ou comparações que não foram ditados. Na dúvida, não acrescente.
-5. LIMITES DO PROTOCOLO: não afirme o que o protocolo do exame não permite caracterizar. Exemplo clássico: TC sem contraste não caracteriza cisto nem realce — escreva "imagem hipodensa, inespecífica no protocolo empregado, sugestiva de…" em vez de afirmar "cisto". Quando houver seção REGRAS DO MÉDICO, o fraseado dela tem precedência sobre qualquer preferência sua.
-6. Atualize a seção final (Conclusão/Opinião) de forma coerente: liste os achados relevantes, o principal primeiro, uma linha por achado — substituindo a frase de normalidade. Se o comando disser que o exame é normal, mantenha a conclusão de normalidade da máscara.
-7. Se o comando mencionar um achado que não tem bloco próprio na máscara, insira a frase nova na posição anatomicamente adequada da Análise.
-7b. Se a máscara contiver o marcador [LADO], substitua-o pela lateralidade ditada, com concordância gramatical correta (ex.: "DO JOELHO DIREITO", "DA MÃO ESQUERDA"). Se a lateralidade não foi ditada, MANTENHA "[LADO]" no texto para o médico preencher.
-7c. Se o comando indicar protocolo diferente do da máscara (ex.: "com contraste" numa máscara sem contraste), ajuste a linha de Técnica para a variante correspondente do médico (buscando o fraseado nas REGRAS DO MÉDICO, quando presentes) e adapte as frases que dependem do protocolo.
-7d. ORDEM ANATÔMICA: a sequência de órgãos da máscara é canônica — NUNCA a reordene. Frases novas (regra 7) entram na posição do órgão a que pertencem dentro dessa sequência (ex.: no abdome, algo do fígado entra junto do bloco do fígado, nunca depois da aorta; um achado de parede abdominal entra ao final, perto de bexiga). Achados múltiplos ditados fora de ordem devem ser reordenados para a sequência da máscara.
-8. Mantenha terminologia radiológica em português brasileiro e o estilo telegráfico do médico (frases curtas, uma por linha, ponto final).
-9. Preserve os marcadores <!-- orgao: ... --> e <!-- impressao --> exatamente onde estão (na linha acima de cada bloco, inclusive dos que você alterar).
-10. Responda SOMENTE com o laudo final, sem comentários, sem markdown de código.
+FORMATO DA RESPOSTA (nada além de patches; sem comentários, sem markdown de código):
+@@ substituir: <id-do-bloco>        ← troca o texto do bloco (id dos marcadores da máscara; "impressao" para a conclusão)
+@@ inserir-apos: <id-existente> | id: <id-novo-kebab>   ← cria bloco novo logo após o bloco citado
+@@ titulo                            ← troca a primeira linha (título) do laudo
+@@ tecnica                           ← troca o parágrafo da seção Técnica
+@@ sem-alteracoes                    ← única resposta quando o exame é normal (máscara sai intacta)
+Após cada cabeçalho @@ vem o novo texto do bloco (uma ou mais linhas), até o próximo @@.
 
-EXEMPLO (observe a regra 3 em ação no bloco de líquido livre):
-Máscara (trecho):
-<!-- orgao: colon -->
-Cólon de distribuição normal, sem espessamentos parietais.
-<!-- orgao: liquido-linfonodos -->
-Ausência de líquido livre ou linfonodomegalias abdominais.
-<!-- orgao: apendice -->
-Apêndice cecal visualizado, sem sinais inflamatórios.
-<!-- impressao -->
-Estudo tomográfico dentro dos limites da normalidade.
-
-Comando ditado: "diverticulite do colo direito não complicada com pequena quantidade de líquido livre adjacente"
-
-Saída correta (trecho):
-<!-- orgao: colon -->
+EXEMPLO — máscara de abdome com blocos figado/pancreas/baco/adrenais/rins/aorta/liquido-linfonodos/apendice/bexiga/impressao (SEM bloco de cólon); comando: "diverticulite do colo direito não complicada com pequena quantidade de líquido livre adjacente". O cólon fica anatomicamente junto de líquido/apêndice — a âncora correta é liquido-linfonodos (NUNCA um órgão do andar superior como baço ou adrenais):
+@@ inserir-apos: liquido-linfonodos | id: colon
 Divertículos no cólon direito, com espessamento parietal e densificação da gordura adjacente, sem sinais de complicação (coleções ou pneumoperitônio).
-<!-- orgao: liquido-linfonodos -->
+@@ substituir: liquido-linfonodos
 Pequena quantidade de líquido livre adjacente ao cólon direito.
 Ausência de linfonodomegalias abdominais.
-<!-- orgao: apendice -->
-Apêndice cecal visualizado, sem sinais inflamatórios.
-<!-- impressao -->
-Diverticulite do cólon direito, não complicada, com pequena quantidade de líquido livre adjacente.`;
+@@ substituir: impressao
+Diverticulite do cólon direito, não complicada, com pequena quantidade de líquido livre adjacente.
+
+EXEMPLO — comando: "tomografia de abdome normal":
+@@ sem-alteracoes
+
+REGRAS INEGOCIÁVEIS:
+1. Emita patch APENAS para blocos que precisam mudar. Cada "@@ substituir" reescreve o bloco no estilo telegráfico do médico (frases curtas, uma por linha, ponto final), incorporando EXATAMENTE as medidas, densidades e lateralidade ditadas (ex.: "1,0 cm", "500 UH", "à direita").
+2. CONSISTÊNCIA GLOBAL: um achado pode exigir patches em MAIS DE UM bloco. Verifique todas as frases normais da máscara: qualquer uma que contradiga um achado ditado precisa de patch. Frases compostas de negação ("Ausência de X ou Y") são divididas quando só parte deixou de ser verdadeira: descreva X conforme ditado e mantenha "Ausência de Y." em linha própria (veja o exemplo). É ERRO GRAVE deixar na máscara uma frase que negue um achado ditado.
+3. NUNCA invente achados, medidas, lateralidade ou comparações que não foram ditados. Na dúvida, não acrescente.
+4. LIMITES DO PROTOCOLO: não afirme o que o protocolo não permite caracterizar (ex.: TC sem contraste não caracteriza cisto — "imagem hipodensa, inespecífica no protocolo empregado, sugestiva de…"). As REGRAS DO MÉDICO e o FRASÁRIO no contexto têm precedência de fraseado: quando o achado ditado corresponder a uma frase pronta do médico, use-a.
+5. IMPRESSÃO: sempre que houver achado, emita "@@ substituir: impressao" — uma linha por achado relevante, o principal primeiro. Exame ditado como normal → responda somente "@@ sem-alteracoes".
+6. INSERÇÕES: achado sem bloco próprio na máscara → "@@ inserir-apos". Antes de escolher a âncora, releia a SEQUÊNCIA COMPLETA de marcadores da máscara no contexto: a âncora correta é o bloco existente imediatamente ANTERIOR à posição anatômica do achado nessa sequência (algo do fígado ancora no fígado; cólon/alças ancoram em liquido-linfonodos; parede abdominal ancora em bexiga). Errar a âncora quebra a ordem de leitura do laudo — confira. Use id novo curto em kebab-case.
+7. [LADO] no título: lateralidade ditada → "@@ titulo" com o título completo e concordância correta ("DO JOELHO DIREITO", "DA MÃO ESQUERDA"). Não ditada → não emita "@@ titulo" (o [LADO] fica para o médico preencher).
+8. Protocolo diferente do da máscara (ex.: "com contraste") → "@@ tecnica" com a variante de técnica do médico (das REGRAS quando houver) e patches nos blocos que dependam do protocolo.`;
 
 /** Prompt do comando `destilar`: cria a máscara-consenso de um tipo de exame a partir de laudos sanitizados. */
 export const DESTILAR_SYSTEM = `Você cria MÁSCARAS de laudo para um sistema de laudos por voz, a partir de vários laudos reais (anonimizados) de um MESMO tipo de exame, do MESMO radiologista. A máscara é o laudo 100% NORMAL daquele exame, no fraseado exato do médico.
@@ -140,9 +131,9 @@ export function generationContext(maskBody: string, regras?: string): string {
 }
 
 export function generationUser(transcript: string): string {
-  return `COMANDO DITADO: "${transcript}"\n\nProduza o laudo final completo.`;
+  return `COMANDO DITADO: "${transcript}"\n\nEmita os patches.`;
 }
 
 export function refineUser(currentReport: string, command: string): string {
-  return `LAUDO ATUAL:\n<<<\n${currentReport}\n>>>\n\nCOMANDO DE REFINO DITADO: "${command}"\n\nAplique o refino ao laudo atual seguindo as mesmas regras (a máscara de referência está no contexto) e devolva o laudo completo atualizado.`;
+  return `LAUDO ATUAL (os patches deste refino aplicam-se sobre ELE, usando os marcadores dele):\n<<<\n${currentReport}\n>>>\n\nCOMANDO DE REFINO DITADO: "${command}"\n\nEmita os patches sobre o laudo atual.`;
 }
