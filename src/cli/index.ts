@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
 import { loadConfig } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
-import { APRENDER_SYSTEM } from '../core/engine/prompts.js';
+import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
@@ -32,7 +32,7 @@ function parseArgs(argv: string[]) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--fast' || a === '--dry-run') flags.set(a.slice(2), true);
-    else if (a === '--mask' || a === '--perfil') flags.set(a.slice(2), argv[++i] ?? '');
+    else if (a === '--mask' || a === '--perfil' || a === '--contendo' || a === '--sem') flags.set(a.slice(2), argv[++i] ?? '');
     else positional.push(a);
   }
   return { flags, positional };
@@ -191,14 +191,34 @@ async function gravar(outPath?: string): Promise<string> {
   return out;
 }
 
-/** Mapeia máscara → prefixo dos arquivos sanitizados do acervo. */
-const APRENDER_MAP: Record<string, string> = {
-  'tc-abdome-total': 'ABDOME-TOTAL_',
-  'tc-torax': 'TORAX_',
-  'tc-cranio': 'CRANIO_',
-  'tc-seios-da-face': 'SEIOS-DA-FACE_',
-  'tc-coluna-lombar': 'COL-LOMBAR_',
-};
+function sanitizedDir(): string {
+  const dir = resolve(APP_ROOT, 'tmp-sanitized');
+  if (!existsSync(dir)) {
+    throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
+  }
+  return dir;
+}
+
+/** Arquivos sanitizados cujo nome começa com algum dos prefixos (mais recentes por último). */
+function corpusFiles(
+  sanDir: string,
+  prefixos: string[],
+  cap: number,
+  filtro?: { contendo?: string; sem?: string },
+): string[] {
+  let files = readdirSync(sanDir)
+    .filter((f) => prefixos.some((p) => f.startsWith(`${p}_`)))
+    .sort();
+  if (filtro?.contendo || filtro?.sem) {
+    files = files.filter((f) => {
+      const text = readFileSync(join(sanDir, f), 'utf8');
+      if (filtro.contendo && !text.includes(filtro.contendo)) return false;
+      if (filtro.sem && text.includes(filtro.sem)) return false;
+      return true;
+    });
+  }
+  return files.slice(-cap);
+}
 
 /**
  * Camada de inteligência: lê os laudos SANITIZADOS do acervo e destila as
@@ -208,23 +228,18 @@ const APRENDER_MAP: Record<string, string> = {
 async function aprender(target: string) {
   requireEnv('ANTHROPIC_API_KEY');
   const config = loadConfig(APP_ROOT);
-  const sanDir = resolve(APP_ROOT, 'tmp-sanitized');
-  if (!existsSync(sanDir)) {
-    throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
-  }
-  const ids = target === 'todos' ? Object.keys(APRENDER_MAP) : [target];
+  const masks = loadMasks(config);
+  const sanDir = sanitizedDir();
+  const alvo = target === 'todos' ? masks.filter((m) => m.prefixos.length > 0) : masks.filter((m) => m.id === target);
+  if (alvo.length === 0) throw new Error(`nenhuma máscara com prefixos para "${target}"`);
   const llm = new LLMClient();
   const regrasDir = join(config.masksDir, 'regras');
   mkdirSync(regrasDir, { recursive: true });
-  for (const id of ids) {
-    const prefix = APRENDER_MAP[id];
-    if (!prefix) {
-      console.warn(`sem mapeamento de laudos para "${id}" — opções: ${Object.keys(APRENDER_MAP).join(', ')}, todos`);
-      continue;
-    }
-    const files = readdirSync(sanDir).filter((f) => f.startsWith(prefix)).sort().slice(0, 60);
+  for (const m of alvo) {
+    const id = m.id;
+    const files = corpusFiles(sanDir, m.prefixos, 60);
     if (files.length === 0) {
-      console.warn(`nenhum laudo sanitizado com prefixo ${prefix}`);
+      console.warn(`nenhum laudo sanitizado para ${id} (prefixos: ${m.prefixos.join(', ')})`);
       continue;
     }
     const corpus = files
@@ -247,6 +262,38 @@ async function aprender(target: string) {
     );
     console.log(`  → ${out}`);
   }
+}
+
+/**
+ * Destila a MÁSCARA-CONSENSO de um tipo de exame a partir dos laudos sanitizados.
+ * Uso: laudo destilar <id-novo> <PREFIXO1> [PREFIXO2…]  → rascunho em _rascunhos/
+ */
+async function destilar(id: string, prefixos: string[], filtro?: { contendo?: string; sem?: string }) {
+  if (!id || prefixos.length === 0) throw new Error('uso: laudo destilar <id-novo> <PREFIXO1> [PREFIXO2…] [--contendo "…"] [--sem "…"]');
+  requireEnv('ANTHROPIC_API_KEY');
+  const config = loadConfig(APP_ROOT);
+  const sanDir = sanitizedDir();
+  const files = corpusFiles(sanDir, prefixos, 40, filtro);
+  if (files.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
+  const corpus = files
+    .map((f, i) => `─── LAUDO ${i + 1} ───\n${readFileSync(join(sanDir, f), 'utf8').trim()}`)
+    .join('\n\n');
+  const llm = new LLMClient();
+  process.stdout.write(`Destilando ${id} de ${files.length} laudos… `);
+  const t0 = performance.now();
+  const r = await llm.complete({
+    model: config.llm.generationModel,
+    system: [{ text: DESTILAR_SYSTEM, cache: true }],
+    user: `id: ${id}\nprefixos: [${prefixos.join(', ')}]\n\n${corpus}`,
+    maxTokens: 2500,
+  });
+  console.log(`${fmt(performance.now() - t0)} (custo ≈ US$ ${estimateCostUSD(config.llm.generationModel, r.usage).toFixed(3)})`);
+  const dir = join(config.masksDir, '_rascunhos');
+  mkdirSync(dir, { recursive: true });
+  const out = join(dir, `${id}.md`);
+  const text = r.text.trim().replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/, '');
+  writeFileSync(out, `${text}\n`, 'utf8');
+  console.log(`  → ${out} (rascunho — revisar e mover para a biblioteca)`);
 }
 
 /** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
@@ -362,6 +409,11 @@ async function main() {
     await novoCaso();
   } else if (cmd === 'aprender') {
     await aprender(positional[1] ?? 'todos');
+  } else if (cmd === 'destilar') {
+    await destilar(positional[1] ?? '', positional.slice(2), {
+      contendo: flags.get('contendo') as string | undefined,
+      sem: flags.get('sem') as string | undefined,
+    });
   } else if (cmd === 'eval') {
     await runEval();
   } else if (cmd === 'masks') {

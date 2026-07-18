@@ -32,6 +32,8 @@ REGRAS INEGOCIÁVEIS:
 5. LIMITES DO PROTOCOLO: não afirme o que o protocolo do exame não permite caracterizar. Exemplo clássico: TC sem contraste não caracteriza cisto nem realce — escreva "imagem hipodensa, inespecífica no protocolo empregado, sugestiva de…" em vez de afirmar "cisto". Quando houver seção REGRAS DO MÉDICO, o fraseado dela tem precedência sobre qualquer preferência sua.
 6. Atualize a seção final (Conclusão/Opinião) de forma coerente: liste os achados relevantes, o principal primeiro, uma linha por achado — substituindo a frase de normalidade. Se o comando disser que o exame é normal, mantenha a conclusão de normalidade da máscara.
 7. Se o comando mencionar um achado que não tem bloco próprio na máscara, insira a frase nova na posição anatomicamente adequada da Análise.
+7b. Se a máscara contiver o marcador [LADO], substitua-o pela lateralidade ditada, com concordância gramatical correta (ex.: "DO JOELHO DIREITO", "DA MÃO ESQUERDA"). Se a lateralidade não foi ditada, MANTENHA "[LADO]" no texto para o médico preencher.
+7c. Se o comando indicar protocolo diferente do da máscara (ex.: "com contraste" numa máscara sem contraste), ajuste a linha de Técnica para a variante correspondente do médico (buscando o fraseado nas REGRAS DO MÉDICO, quando presentes) e adapte as frases que dependem do protocolo.
 8. Mantenha terminologia radiológica em português brasileiro e o estilo telegráfico do médico (frases curtas, uma por linha, ponto final).
 9. Preserve os marcadores <!-- orgao: ... --> e <!-- impressao --> exatamente onde estão (na linha acima de cada bloco, inclusive dos que você alterar).
 10. Responda SOMENTE com o laudo final, sem comentários, sem markdown de código.
@@ -59,6 +61,48 @@ Ausência de linfonodomegalias abdominais.
 Apêndice cecal visualizado, sem sinais inflamatórios.
 <!-- impressao -->
 Diverticulite do cólon direito, não complicada, com pequena quantidade de líquido livre adjacente.`;
+
+/** Prompt do comando `destilar`: cria a máscara-consenso de um tipo de exame a partir de laudos sanitizados. */
+export const DESTILAR_SYSTEM = `Você cria MÁSCARAS de laudo para um sistema de laudos por voz, a partir de vários laudos reais (anonimizados) de um MESMO tipo de exame, do MESMO radiologista. A máscara é o laudo 100% NORMAL daquele exame, no fraseado exato do médico.
+
+FORMATO OBRIGATÓRIO da saída (arquivo markdown completo, e nada além dele):
+
+---
+id: <id-informado>
+modalidade: TC
+regiao: [<regiões anatômicas>]
+nome: <nome curto do exame>
+sinonimos: [<como o médico se referiria a este exame ditando: variações informais, abreviações>]
+contraste: <sem | com | opcional — conforme predominar no corpus>
+versao: 1
+origem: consenso
+prefixos: [<prefixos-informados>]
+---
+<TÍTULO EM CAIXA ALTA exatamente como aparece nos laudos>
+
+Técnica:
+
+<frase de técnica MAIS FREQUENTE do corpus, literal>
+
+Análise:
+
+<!-- orgao: <id-kebab-da-estrutura> -->
+<frase normal da estrutura, literal do corpus>
+
+<um bloco por estrutura avaliada rotineiramente, NA ORDEM em que o médico as descreve>
+
+Conclusão:
+
+<!-- impressao -->
+<frase de conclusão de exame normal que o médico usa neste exame; se não houver evidência no corpus, use "Estudo tomográfico dentro dos limites da normalidade.">
+
+REGRAS:
+1. FIDELIDADE: toda frase deve ser copiada literalmente dos laudos (a variante mais frequente). Não invente frases nem estruturas que o médico não descreve rotineiramente.
+2. Inclua apenas estruturas que aparecem na MAIORIA dos laudos como frase de normalidade (achados patológicos frequentes NÃO entram na máscara — ela é o exame normal).
+3. Se o exame tiver lateralidade (títulos com DIREITO/ESQUERDO no corpus), use "[LADO]" no título (ex.: "TOMOGRAFIA COMPUTADORIZADA DO JOELHO [LADO]") e escreva as frases de forma neutra quanto ao lado.
+4. Se o corpus usar "Opinião:" em vez de "Conclusão:", respeite. Se usar seção "Nota:", NÃO a inclua na máscara (notas são caso a caso).
+5. Marcadores <!-- orgao: --> em kebab-case curto, um por bloco, na linha acima do bloco.
+6. Responda SOMENTE com o conteúdo do arquivo markdown, sem cercas de código.`;
 
 /** Prompt do comando `aprender`: extrai as regras/fraseado do médico de um corpus de laudos sanitizados. */
 export const APRENDER_SYSTEM = `Você é o módulo de aprendizado de estilo de um sistema de laudos radiológicos. Receberá vários laudos reais (anonimizados) de um MESMO tipo de exame, todos do MESMO radiologista. Produza um documento markdown "REGRAS DO MÉDICO" com estas seções:

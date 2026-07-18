@@ -9,6 +9,8 @@ export const MaskFrontmatterSchema = z.object({
   contraste: z.enum(['sem', 'com', 'opcional']).default('sem'),
   versao: z.number().default(1),
   origem: z.enum(['importado-pdf', 'consenso', 'manual']).default('manual'),
+  /** Prefixos dos arquivos do acervo que alimentam esta máscara (aprender/destilar). */
+  prefixos: z.array(z.string()).default([]),
 });
 
 export type MaskFrontmatter = z.infer<typeof MaskFrontmatterSchema>;
