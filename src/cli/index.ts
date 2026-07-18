@@ -157,8 +157,8 @@ async function runPipeline(opts: {
   console.log('\nLembrete: este texto é um RASCUNHO — revise antes de assinar.');
 }
 
-async function gravar(): Promise<string> {
-  const out = join(tmpdir(), `laudo-${Date.now()}.wav`);
+async function gravar(outPath?: string): Promise<string> {
+  const out = outPath ?? join(tmpdir(), `laudo-${Date.now()}.wav`);
   const input =
     process.platform === 'darwin'
       ? ['-f', 'avfoundation', '-i', ':default']
@@ -177,6 +177,48 @@ async function gravar(): Promise<string> {
   return out;
 }
 
+/** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
+async function novoCaso() {
+  requireEnv('OPENAI_API_KEY');
+  requireEnv('ANTHROPIC_API_KEY');
+  const config = loadConfig(APP_ROOT);
+  const masks = loadMasks(config);
+  const goldenDir = resolve(APP_ROOT, 'eval', 'golden');
+  const n = readdirSync(goldenDir).filter((f) => f.endsWith('.json')).length + 1;
+  const id = `caso-${String(n).padStart(3, '0')}`;
+
+  const audioPath = join(goldenDir, `${id}.wav`);
+  await gravar(audioPath);
+  const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
+  process.stdout.write('Transcrevendo… ');
+  const r = await stt.transcribe(audioPath);
+  console.log(`${fmt(r.durationMs)}\n> "${r.text}"`);
+
+  console.log(`\nMáscaras: ${masks.map((m) => m.id).join(', ')}`);
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const esperada = await new Promise<string>((res) =>
+    rl.question('Máscara esperada (id, ou "nenhuma" se o comando é ambíguo de propósito): ', (a) => {
+      rl.close();
+      res(a.trim());
+    }),
+  );
+
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(
+    join(goldenDir, `${id}.json`),
+    JSON.stringify({ id, audio: `${id}.wav`, transcript_gravado: r.text, mask_esperada: esperada }, null, 2),
+    'utf8',
+  );
+
+  const llm = new LLMClient();
+  const sel = await selectMask(llm, config.llm.selectionModel, r.text, masks);
+  const got = sel.mask?.id ?? 'nenhuma';
+  console.log(
+    `${got === esperada ? '✓ seleção correta' : `✗ seleção divergente (obtido: ${got})`} (confiança: ${sel.confianca})`,
+  );
+  console.log(`Caso salvo: eval/golden/${id}.json (áudio local, fora do git)`);
+}
+
 async function runEval() {
   const config = loadConfig(APP_ROOT);
   const masks = loadMasks(config);
@@ -187,17 +229,31 @@ async function runEval() {
     .filter((f) => f.endsWith('.json'))
     .sort()
     .map((f) => JSON.parse(readFileSync(join(goldenDir, f), 'utf8')));
+  const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   let acertos = 0;
   let totalMs = 0;
   for (const c of cases) {
-    const sel = await selectMask(llm, config.llm.selectionModel, c.comando, masks);
+    let comando = c.comando as string | undefined;
+    let sttMs = 0;
+    if (!comando && c.audio) {
+      requireEnv('OPENAI_API_KEY');
+      const r = await stt.transcribe(join(goldenDir, c.audio));
+      comando = r.text;
+      sttMs = r.durationMs;
+    }
+    if (!comando) {
+      console.log(`? ${c.id}: caso sem "comando" nem "audio" — pulado`);
+      continue;
+    }
+    const sel = await selectMask(llm, config.llm.selectionModel, comando, masks);
     const got = sel.mask?.id ?? 'nenhuma';
     const ok = got === c.mask_esperada;
     if (ok) acertos++;
-    totalMs += sel.durationMs;
+    totalMs += sttMs + sel.durationMs;
     console.log(
-      `${ok ? '✓' : '✗'} ${c.id}: esperado=${c.mask_esperada} obtido=${got} (${sel.confianca}, ${fmt(sel.durationMs)})`,
+      `${ok ? '✓' : '✗'} ${c.id}: esperado=${c.mask_esperada} obtido=${got} (${sel.confianca}${c.audio ? `, stt ${fmt(sttMs)}` : ''}, seleção ${fmt(sel.durationMs)})`,
     );
+    if (c.audio) console.log(`   ouvido: "${comando}"`);
   }
   console.log(
     `\nSeleção: ${acertos}/${cases.length} (${((100 * acertos) / cases.length).toFixed(0)}%) | latência média ${fmt(totalMs / cases.length)}`,
@@ -220,6 +276,8 @@ async function main() {
   } else if (cmd === 'gravar') {
     const audioPath = await gravar();
     await runPipeline({ audioPath, ...common });
+  } else if (cmd === 'caso') {
+    await novoCaso();
   } else if (cmd === 'eval') {
     await runEval();
   } else if (cmd === 'masks') {
