@@ -1,0 +1,6 @@
+{
+  "id": "caso-010",
+  "audio": "caso-010.wav",
+  "transcript_gravado": "Ocupatinha maxilar direita com obliteração do infundíbulo.",
+  "mask_esperada": "tc-seios-da-face"
+}

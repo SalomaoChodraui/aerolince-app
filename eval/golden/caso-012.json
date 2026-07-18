@@ -1,0 +1,6 @@
+{
+  "id": "caso-012",
+  "audio": "caso-012.wav",
+  "transcript_gravado": "Hipodensidade em território da artéria cerebral média direita compatível com AVC isquêmico. ASPECTS de 4.",
+  "mask_esperada": "tc-cranio"
+}

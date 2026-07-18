@@ -1,0 +1,6 @@
+{
+  "id": "caso-008",
+  "audio": "caso-008.wav",
+  "transcript_gravado": "Tomografia computadorizada de abdome sem contraste. O paciente tem cistos renais bilaterais, o maior medindo 3,1 cm à esquerda. Cálculos renais bilaterais, o maior no terço médio do rim direito.",
+  "mask_esperada": "tc-abdome-total"
+}

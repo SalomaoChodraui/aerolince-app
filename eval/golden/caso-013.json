@@ -1,0 +1,6 @@
+{
+  "id": "caso-013",
+  "audio": "caso-013.wav",
+  "transcript_gravado": "Abaulamento discal em L4-L5, sem conflito radicular.",
+  "mask_esperada": "tc-coluna-lombar"
+}

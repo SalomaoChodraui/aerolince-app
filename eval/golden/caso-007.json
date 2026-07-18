@@ -1,0 +1,6 @@
+{
+  "id": "caso-007",
+  "audio": "caso-007.wav",
+  "transcript_gravado": "Apendicite aguda não complicada.",
+  "mask_esperada": "tc-abdome-total"
+}

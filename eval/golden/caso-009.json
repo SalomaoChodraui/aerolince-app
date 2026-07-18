@@ -1,0 +1,6 @@
+{
+  "id": "caso-009",
+  "audio": "caso-009.wav",
+  "transcript_gravado": "Tórax normal.",
+  "mask_esperada": "tc-torax"
+}

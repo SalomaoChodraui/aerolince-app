@@ -36,7 +36,14 @@ export interface GenerationResult {
 
 function parseJson(text: string): unknown {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // O modelo às vezes acrescenta texto ao redor do JSON — extrai o primeiro objeto plano
+    const m = cleaned.match(/\{[^{}]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error(`resposta de seleção não é JSON válido: ${cleaned.slice(0, 120)}`);
+  }
 }
 
 export async function selectMask(

@@ -1,0 +1,6 @@
+{
+  "id": "caso-006",
+  "audio": "caso-006.wav",
+  "transcript_gravado": "Tomografia de crânio normal.",
+  "mask_esperada": "tc-cranio"
+}

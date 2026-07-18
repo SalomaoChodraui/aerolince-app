@@ -194,14 +194,21 @@ async function novoCaso() {
   const r = await stt.transcribe(audioPath);
   console.log(`${fmt(r.durationMs)}\n> "${r.text}"`);
 
-  console.log(`\nMáscaras: ${masks.map((m) => m.id).join(', ')}`);
+  console.log('\nMáscaras:');
+  masks.forEach((m, i) => console.log(`  ${i + 1}. ${m.id} — ${m.nome}`));
+  console.log('  0. nenhuma (comando ambíguo de propósito)');
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const esperada = await new Promise<string>((res) =>
-    rl.question('Máscara esperada (id, ou "nenhuma" se o comando é ambíguo de propósito): ', (a) => {
-      rl.close();
-      res(a.trim());
-    }),
-  );
+  let esperada = '';
+  while (!esperada) {
+    const a = await new Promise<string>((res) =>
+      rl.question('Máscara esperada (número ou id): ', (x) => res(x.trim())),
+    );
+    if (a === '0' || a.toLowerCase() === 'nenhuma') esperada = 'nenhuma';
+    else if (/^\d+$/.test(a) && masks[Number(a) - 1]) esperada = masks[Number(a) - 1]!.id;
+    else if (getMask(masks, a)) esperada = a;
+    else console.log(`  "${a}" não é um número da lista nem um id válido — tente de novo.`);
+  }
+  rl.close();
 
   const { writeFileSync } = await import('node:fs');
   writeFileSync(
@@ -245,14 +252,18 @@ async function runEval() {
       console.log(`? ${c.id}: caso sem "comando" nem "audio" — pulado`);
       continue;
     }
-    const sel = await selectMask(llm, config.llm.selectionModel, comando, masks);
-    const got = sel.mask?.id ?? 'nenhuma';
-    const ok = got === c.mask_esperada;
-    if (ok) acertos++;
-    totalMs += sttMs + sel.durationMs;
-    console.log(
-      `${ok ? '✓' : '✗'} ${c.id}: esperado=${c.mask_esperada} obtido=${got} (${sel.confianca}${c.audio ? `, stt ${fmt(sttMs)}` : ''}, seleção ${fmt(sel.durationMs)})`,
-    );
+    try {
+      const sel = await selectMask(llm, config.llm.selectionModel, comando, masks);
+      const got = sel.mask?.id ?? 'nenhuma';
+      const ok = got === c.mask_esperada;
+      if (ok) acertos++;
+      totalMs += sttMs + sel.durationMs;
+      console.log(
+        `${ok ? '✓' : '✗'} ${c.id}: esperado=${c.mask_esperada} obtido=${got} (${sel.confianca}${c.audio ? `, stt ${fmt(sttMs)}` : ''}, seleção ${fmt(sel.durationMs)})`,
+      );
+    } catch (err) {
+      console.log(`✗ ${c.id}: erro — ${err instanceof Error ? err.message : err}`);
+    }
     if (c.audio) console.log(`   ouvido: "${comando}"`);
   }
   console.log(

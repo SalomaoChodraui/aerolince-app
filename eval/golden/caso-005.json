@@ -1,0 +1,6 @@
+{
+  "id": "caso-005",
+  "audio": "caso-005.wav",
+  "transcript_gravado": "Paciente com evento isquêmico agudo no lobo frontal esquerdo.",
+  "mask_esperada": "tc-cranio"
+}

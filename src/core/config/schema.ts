@@ -46,6 +46,10 @@ export const GLOSSARIO_PADRAO = [
   'esfeno-etmoidais',
   'rinofaringe',
   'colecistectomia',
+  'sinusopatia',
+  'ASPECTS',
+  'abaulamento discal',
+  'hipodensidade',
 ];
 
 /**
