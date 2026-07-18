@@ -75,6 +75,8 @@ export interface GenerateParams {
   profileName: string;
   profileBody: string;
   model: string;
+  /** REGRAS DO MÉDICO destiladas dos laudos dele (comando `aprender`). */
+  regras?: string;
 }
 
 export async function generate(llm: LLMClient, p: GenerateParams): Promise<GenerationResult> {
@@ -85,7 +87,7 @@ export async function generate(llm: LLMClient, p: GenerateParams): Promise<Gener
       { text: GENERATION_RULES, cache: true },
       { text: generationProfileBlock(p.profileName, p.profileBody) },
     ],
-    user: generationUser(p.mask.body, p.transcript),
+    user: generationUser(p.mask.body, p.transcript, p.regras),
     maxTokens: 3000,
   });
   const reportRaw = result.text.trim();
@@ -105,6 +107,7 @@ export interface RefineParams {
   profileName: string;
   profileBody: string;
   model: string;
+  regras?: string;
 }
 
 export async function refine(llm: LLMClient, p: RefineParams): Promise<GenerationResult> {
@@ -115,7 +118,7 @@ export async function refine(llm: LLMClient, p: RefineParams): Promise<Generatio
       { text: GENERATION_RULES, cache: true },
       { text: generationProfileBlock(p.profileName, p.profileBody) },
     ],
-    user: refineUser(p.currentReportRaw, p.mask.body, p.command),
+    user: refineUser(p.currentReportRaw, p.mask.body, p.command, p.regras),
     maxTokens: 3000,
   });
   const reportRaw = result.text.trim();

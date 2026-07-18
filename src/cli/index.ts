@@ -11,13 +11,14 @@
  */
 import 'dotenv/config';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
 import { loadConfig } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
+import { APRENDER_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
@@ -41,6 +42,17 @@ function loadMasks(config: ReturnType<typeof loadConfig>) {
   if (existsSync(config.masksDir)) return loadLibrary(config.masksDir);
   console.warn(`AVISO: biblioteca não encontrada em ${config.masksDir} — usando masks-exemplo/`);
   return loadLibrary(resolve(APP_ROOT, 'masks-exemplo'));
+}
+
+/** Carrega as REGRAS DO MÉDICO da máscara (gerais + específicas), se existirem. */
+function loadRegras(config: ReturnType<typeof loadConfig>, maskId: string): string | undefined {
+  const dir = join(config.masksDir, 'regras');
+  const parts: string[] = [];
+  for (const f of ['gerais.md', `${maskId}.md`]) {
+    const p = join(dir, f);
+    if (existsSync(p)) parts.push(readFileSync(p, 'utf8').trim());
+  }
+  return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
 
 function loadProfile(config: ReturnType<typeof loadConfig>, id: string) {
@@ -120,12 +132,14 @@ async function runPipeline(opts: {
   // Geração
   const genModel = opts.fast ? config.llm.fastModel : config.llm.generationModel;
   process.stdout.write(`Gerando laudo (${genModel})… `);
+  const regras = loadRegras(config, mask.id);
   const gen = await generate(llm, {
     mask,
     transcript,
     profileName: profile.name,
     profileBody: profile.body,
     model: genModel,
+    regras,
   });
   console.log(fmt(gen.durationMs));
   const genCost = estimateCostUSD(genModel, gen.usage);
@@ -177,6 +191,64 @@ async function gravar(outPath?: string): Promise<string> {
   return out;
 }
 
+/** Mapeia máscara → prefixo dos arquivos sanitizados do acervo. */
+const APRENDER_MAP: Record<string, string> = {
+  'tc-abdome-total': 'ABDOME-TOTAL_',
+  'tc-torax': 'TORAX_',
+  'tc-cranio': 'CRANIO_',
+  'tc-seios-da-face': 'SEIOS-DA-FACE_',
+  'tc-coluna-lombar': 'COL-LOMBAR_',
+};
+
+/**
+ * Camada de inteligência: lê os laudos SANITIZADOS do acervo e destila as
+ * REGRAS DO MÉDICO (limites de protocolo, frasário patológico, estrutura),
+ * que passam a ser injetadas em toda geração daquela máscara.
+ */
+async function aprender(target: string) {
+  requireEnv('ANTHROPIC_API_KEY');
+  const config = loadConfig(APP_ROOT);
+  const sanDir = resolve(APP_ROOT, 'tmp-sanitized');
+  if (!existsSync(sanDir)) {
+    throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
+  }
+  const ids = target === 'todos' ? Object.keys(APRENDER_MAP) : [target];
+  const llm = new LLMClient();
+  const regrasDir = join(config.masksDir, 'regras');
+  mkdirSync(regrasDir, { recursive: true });
+  for (const id of ids) {
+    const prefix = APRENDER_MAP[id];
+    if (!prefix) {
+      console.warn(`sem mapeamento de laudos para "${id}" — opções: ${Object.keys(APRENDER_MAP).join(', ')}, todos`);
+      continue;
+    }
+    const files = readdirSync(sanDir).filter((f) => f.startsWith(prefix)).sort().slice(0, 60);
+    if (files.length === 0) {
+      console.warn(`nenhum laudo sanitizado com prefixo ${prefix}`);
+      continue;
+    }
+    const corpus = files
+      .map((f, i) => `─── LAUDO ${i + 1} ───\n${readFileSync(join(sanDir, f), 'utf8').trim()}`)
+      .join('\n\n');
+    process.stdout.write(`Aprendendo ${id} com ${files.length} laudos… `);
+    const t0 = performance.now();
+    const r = await llm.complete({
+      model: config.llm.generationModel,
+      system: [{ text: APRENDER_SYSTEM, cache: true }],
+      user: `Tipo de exame: ${id}\n\n${corpus}`,
+      maxTokens: 4000,
+    });
+    console.log(`${fmt(performance.now() - t0)} (custo ≈ US$ ${estimateCostUSD(config.llm.generationModel, r.usage).toFixed(3)})`);
+    const out = join(regrasDir, `${id}.md`);
+    writeFileSync(
+      out,
+      `<!-- RASCUNHO gerado automaticamente de ${files.length} laudos — REVISE e edite à vontade; o sistema usa este arquivo em toda geração desta máscara -->\n\n${r.text.trim()}\n`,
+      'utf8',
+    );
+    console.log(`  → ${out}`);
+  }
+}
+
 /** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
 async function novoCaso() {
   requireEnv('OPENAI_API_KEY');
@@ -210,7 +282,6 @@ async function novoCaso() {
   }
   rl.close();
 
-  const { writeFileSync } = await import('node:fs');
   writeFileSync(
     join(goldenDir, `${id}.json`),
     JSON.stringify({ id, audio: `${id}.wav`, transcript_gravado: r.text, mask_esperada: esperada }, null, 2),
@@ -289,6 +360,8 @@ async function main() {
     await runPipeline({ audioPath, ...common });
   } else if (cmd === 'caso') {
     await novoCaso();
+  } else if (cmd === 'aprender') {
+    await aprender(positional[1] ?? 'todos');
   } else if (cmd === 'eval') {
     await runEval();
   } else if (cmd === 'masks') {
