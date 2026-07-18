@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { LLMClient, LLMUsage, SystemBlock } from '../llm/anthropic.js';
 import { Mask } from '../masks/schema.js';
 import { buildCatalog, getMask } from '../masks/library.js';
+import { resolverContraste } from '../masks/matcher.js';
 import { DiffResult, parseOrganBlocks, stripMarkers } from './diff.js';
 import { PatchError, applyPatches, parsePatches, patchedIds } from './patch.js';
 import {
@@ -73,7 +74,9 @@ export async function selectMask(
     maxTokens: 200,
   });
   const parsed = SelectionSchema.parse(parseJson(result.text));
-  const mask = parsed.mask_id === 'nenhuma' ? null : (getMask(masks, parsed.mask_id) ?? null);
+  const escolhida = parsed.mask_id === 'nenhuma' ? null : (getMask(masks, parsed.mask_id) ?? null);
+  // Convenção do contraste é determinística — não fica a critério do modelo
+  const mask = escolhida ? resolverContraste(escolhida, transcript, masks) : null;
   return {
     mask,
     confianca: parsed.confianca,
