@@ -45,11 +45,18 @@ function getConfig(): Config {
   return loadConfig(appRoot);
 }
 
+function exigirChave(nome: 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY'): void {
+  if (!process.env[nome]) {
+    throw new Error(`chave ${nome} não configurada — edite o arquivo .env em ${appRoot} e reabra o app`);
+  }
+}
+
 export function processarTexto(transcript: string): Promise<ResultadoLaudo> {
   return processarTranscript(transcript, 0);
 }
 
 export async function processarAudio(audio: Buffer): Promise<ResultadoLaudo> {
+  exigirChave('OPENAI_API_KEY');
   const config = getConfig();
   const tmp = join(tmpdir(), `aerolince-${Date.now()}.webm`);
   writeFileSync(tmp, audio);
@@ -60,6 +67,7 @@ export async function processarAudio(audio: Buffer): Promise<ResultadoLaudo> {
 }
 
 async function processarTranscript(transcript: string, sttMs: number): Promise<ResultadoLaudo> {
+  exigirChave('ANTHROPIC_API_KEY');
   const config = getConfig();
   const masks = loadLibrary(config.masksDir);
   const llm = new LLMClient();
@@ -148,6 +156,7 @@ export function refinarTexto(command: string): Promise<ResultadoLaudo> {
 }
 
 export async function refinarAudio(audio: Buffer): Promise<ResultadoLaudo> {
+  exigirChave('OPENAI_API_KEY');
   const config = getConfig();
   const tmp = join(tmpdir(), `aerolince-refino-${Date.now()}.webm`);
   writeFileSync(tmp, audio);

@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BrowserWindow, app, clipboard, globalShortcut, ipcMain, screen, systemPreferences } from 'electron';
 import { saveReport, saveSidecar } from '../core/output/output.js';
@@ -96,8 +97,39 @@ async function processar(fn: () => Promise<ResultadoLaudo>): Promise<{ ok: boole
   }
 }
 
+/**
+ * Empacotado: dados do usuário (config, chaves, biblioteca, laudos) vivem em
+ * userData (mac: ~/Library/Application Support/Aerolince; win: %APPDATA%/Aerolince).
+ * Primeira execução cria a estrutura com perfis padrão e máscaras de exemplo.
+ * Dev: continua tudo na pasta do repositório.
+ */
+function bootstrap(): string {
+  const root = app.isPackaged ? app.getPath('userData') : app.getAppPath();
+  if (app.isPackaged) {
+    const cfgPath = join(root, 'laudo.config.json');
+    if (!existsSync(cfgPath)) {
+      const masksDir = join(root, 'biblioteca-mascaras');
+      const profilesDir = join(root, 'perfis');
+      const outputDir = join(root, 'Laudos Gerados');
+      mkdirSync(outputDir, { recursive: true });
+      cpSync(join(process.resourcesPath, 'perfis'), profilesDir, { recursive: true });
+      cpSync(join(process.resourcesPath, 'masks-exemplo'), masksDir, { recursive: true });
+      writeFileSync(cfgPath, JSON.stringify({ masksDir, profilesDir, outputDir }, null, 2), 'utf8');
+    }
+    if (!existsSync(join(root, '.env'))) {
+      writeFileSync(
+        join(root, '.env'),
+        '# Chaves de API do Aerolince — preencha e reabra o app\nANTHROPIC_API_KEY=\nOPENAI_API_KEY=\n',
+        'utf8',
+      );
+    }
+  }
+  dotenvConfig({ path: join(root, '.env') });
+  return root;
+}
+
 app.whenReady().then(() => {
-  initPipeline(app.getAppPath());
+  initPipeline(bootstrap());
   if (process.platform === 'darwin') void systemPreferences.askForMediaAccess('microphone');
   createFloat();
   createResult();

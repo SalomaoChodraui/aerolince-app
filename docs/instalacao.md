@@ -24,3 +24,19 @@ Flags úteis: `--fast` (gera com Haiku, mais rápido), `--perfil urgencia`, `--m
 
 O laudo sai no terminal, vai para a área de transferência e é salvo em `../Laudos Gerados/`.
 As máscaras reais ficam em `../biblioteca-mascaras/` (edite os .md à vontade — o texto é o fraseado do próprio médico).
+
+## App instalado (DMG / instalador Windows)
+
+Na primeira abertura o app cria a pasta de dados com perfis, máscaras de exemplo,
+`laudo.config.json` e um `.env` vazio:
+
+- **Mac:** `~/Library/Application Support/Aerolince/`
+- **Windows:** `%APPDATA%/Aerolince/`
+
+Para pôr em produção na máquina do médico:
+1. Edite o `.env` dessa pasta com as chaves (ANTHROPIC_API_KEY e OPENAI_API_KEY).
+2. Substitua a `biblioteca-mascaras/` de exemplo pela biblioteca real (máscaras + `regras/` + `frasario/`).
+3. Reabra o app.
+
+Apps sem assinatura (fase piloto): no mac, clique-direito → Abrir na primeira vez;
+no Windows, SmartScreen → "Mais informações" → "Executar assim mesmo".

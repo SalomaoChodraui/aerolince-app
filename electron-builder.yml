@@ -5,11 +5,17 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - perfis/**
+  - masks-exemplo/**
 mac:
   target:
     - target: dmg
       arch: [arm64]
   category: public.app-category.medical
+  # Fase piloto: sem assinatura (o certificado Apple Development do Keychain
+  # não serve para distribuição e quebra o build). Assinatura/notarização: Fase 2.
+  identity: null
   extendInfo:
     NSMicrophoneUsageDescription: 'O Aerolince usa o microfone para o ditado dos laudos.'
 win:
