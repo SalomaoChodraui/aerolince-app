@@ -4,6 +4,7 @@ export interface LLMUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  cacheWriteTokens: number;
 }
 
 export interface LLMResult {
@@ -54,12 +55,19 @@ export class LLMClient {
       .filter((c): c is Anthropic.TextBlock => c.type === 'text')
       .map((c) => c.text)
       .join('');
+    const u = r.usage as {
+      input_tokens: number;
+      output_tokens: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
     return {
       text,
       usage: {
-        inputTokens: r.usage.input_tokens,
-        outputTokens: r.usage.output_tokens,
-        cacheReadTokens: (r.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens ?? 0,
+        inputTokens: u.input_tokens,
+        outputTokens: u.output_tokens,
+        cacheReadTokens: u.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
       },
     };
   }
@@ -74,5 +82,12 @@ export function estimateCostUSD(model: string, usage: LLMUsage): number {
   const key = Object.keys(prices).find((k) => model.startsWith(k));
   if (!key) return 0;
   const [inP, outP] = prices[key]!;
-  return (usage.inputTokens * inP + usage.outputTokens * outP) / 1_000_000;
+  // Cache: escrita custa 1,25× o input; leitura custa 0,1×
+  return (
+    (usage.inputTokens * inP +
+      usage.cacheWriteTokens * inP * 1.25 +
+      usage.cacheReadTokens * inP * 0.1 +
+      usage.outputTokens * outP) /
+    1_000_000
+  );
 }

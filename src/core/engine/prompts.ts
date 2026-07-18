@@ -36,6 +36,7 @@ REGRAS INEGOCIÁVEIS:
 7. Se o comando mencionar um achado que não tem bloco próprio na máscara, insira a frase nova na posição anatomicamente adequada da Análise.
 7b. Se a máscara contiver o marcador [LADO], substitua-o pela lateralidade ditada, com concordância gramatical correta (ex.: "DO JOELHO DIREITO", "DA MÃO ESQUERDA"). Se a lateralidade não foi ditada, MANTENHA "[LADO]" no texto para o médico preencher.
 7c. Se o comando indicar protocolo diferente do da máscara (ex.: "com contraste" numa máscara sem contraste), ajuste a linha de Técnica para a variante correspondente do médico (buscando o fraseado nas REGRAS DO MÉDICO, quando presentes) e adapte as frases que dependem do protocolo.
+7d. ORDEM ANATÔMICA: a sequência de órgãos da máscara é canônica — NUNCA a reordene. Frases novas (regra 7) entram na posição do órgão a que pertencem dentro dessa sequência (ex.: no abdome, algo do fígado entra junto do bloco do fígado, nunca depois da aorta; um achado de parede abdominal entra ao final, perto de bexiga). Achados múltiplos ditados fora de ordem devem ser reordenados para a sequência da máscara.
 8. Mantenha terminologia radiológica em português brasileiro e o estilo telegráfico do médico (frases curtas, uma por linha, ponto final).
 9. Preserve os marcadores <!-- orgao: ... --> e <!-- impressao --> exatamente onde estão (na linha acima de cada bloco, inclusive dos que você alterar).
 10. Responda SOMENTE com o laudo final, sem comentários, sem markdown de código.
@@ -127,21 +128,21 @@ export function generationProfileBlock(profileName: string, profileBody: string)
   return `PERFIL DE ESTILO ATIVO: ${profileName}\n${profileBody}`;
 }
 
-function regrasBlock(regras?: string): string {
-  return regras
-    ? `\nREGRAS DO MÉDICO (extraídas dos laudos reais dele — precedência máxima de fraseado):\n<<<\n${regras}\n>>>\n`
+/**
+ * Bloco de contexto ESTÁVEL por máscara (máscara + regras + frasário) — vai no
+ * system com cache_control: laudos consecutivos do mesmo exame pagam ~10% do input.
+ */
+export function generationContext(maskBody: string, regras?: string): string {
+  const regrasParte = regras
+    ? `\n\nREGRAS DO MÉDICO (extraídas dos laudos reais dele — precedência máxima de fraseado):\n<<<\n${regras}\n>>>`
     : '';
+  return `MÁSCARA:\n<<<\n${maskBody}\n>>>${regrasParte}`;
 }
 
-export function generationUser(maskBody: string, transcript: string, regras?: string): string {
-  return `MÁSCARA:\n<<<\n${maskBody}\n>>>\n${regrasBlock(regras)}\nCOMANDO DITADO: "${transcript}"\n\nProduza o laudo final completo.`;
+export function generationUser(transcript: string): string {
+  return `COMANDO DITADO: "${transcript}"\n\nProduza o laudo final completo.`;
 }
 
-export function refineUser(
-  currentReport: string,
-  maskBody: string,
-  command: string,
-  regras?: string,
-): string {
-  return `LAUDO ATUAL:\n<<<\n${currentReport}\n>>>\n\nMÁSCARA ORIGINAL (referência de estilo):\n<<<\n${maskBody}\n>>>\n${regrasBlock(regras)}\nCOMANDO DE REFINO DITADO: "${command}"\n\nAplique o refino ao laudo atual seguindo as mesmas regras e devolva o laudo completo atualizado.`;
+export function refineUser(currentReport: string, command: string): string {
+  return `LAUDO ATUAL:\n<<<\n${currentReport}\n>>>\n\nCOMANDO DE REFINO DITADO: "${command}"\n\nAplique o refino ao laudo atual seguindo as mesmas regras (a máscara de referência está no contexto) e devolva o laudo completo atualizado.`;
 }

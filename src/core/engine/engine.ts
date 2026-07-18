@@ -5,6 +5,7 @@ import { buildCatalog, getMask } from '../masks/library.js';
 import { DiffResult, diffAgainstMask, stripMarkers } from './diff.js';
 import {
   GENERATION_RULES,
+  generationContext,
   generationProfileBlock,
   generationUser,
   refineUser,
@@ -85,9 +86,10 @@ export async function generate(llm: LLMClient, p: GenerateParams): Promise<Gener
     model: p.model,
     system: [
       { text: GENERATION_RULES, cache: true },
+      { text: generationContext(p.mask.body, p.regras), cache: true },
       { text: generationProfileBlock(p.profileName, p.profileBody) },
     ],
-    user: generationUser(p.mask.body, p.transcript, p.regras),
+    user: generationUser(p.transcript),
     maxTokens: 3000,
   });
   const reportRaw = result.text.trim();
@@ -116,9 +118,10 @@ export async function refine(llm: LLMClient, p: RefineParams): Promise<Generatio
     model: p.model,
     system: [
       { text: GENERATION_RULES, cache: true },
+      { text: generationContext(p.mask.body, p.regras), cache: true },
       { text: generationProfileBlock(p.profileName, p.profileBody) },
     ],
-    user: refineUser(p.currentReportRaw, p.mask.body, p.command, p.regras),
+    user: refineUser(p.currentReportRaw, p.command),
     maxTokens: 3000,
   });
   const reportRaw = result.text.trim();
