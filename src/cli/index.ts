@@ -32,7 +32,7 @@ function parseArgs(argv: string[]) {
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--fast' || a === '--dry-run' || a === '--sonnet') flags.set(a.slice(2), true);
+    if (a === '--fast' || a === '--dry-run' || a === '--sonnet' || a === '--kimi') flags.set(a.slice(2), true);
     else if (a === '--mask' || a === '--perfil' || a === '--contendo' || a === '--sem') flags.set(a.slice(2), argv[++i] ?? '');
     else positional.push(a);
   }
@@ -65,6 +65,7 @@ async function runPipeline(opts: {
   perfil?: string;
   fast?: boolean;
   sonnet?: boolean;
+  kimi?: boolean;
   dryRun?: boolean;
 }) {
   const config = loadConfig(APP_ROOT);
@@ -123,14 +124,25 @@ async function runPipeline(opts: {
   console.log(`Máscara: ${mask.nome} [${mask.id}] (confiança: ${confianca}, ${fmt(selMs)})`);
 
   // Geração
-  const genModel = opts.sonnet
-    ? 'claude-sonnet-5'
-    : opts.fast
-      ? config.llm.fastModel
-      : config.llm.generationModel;
+  const genModel = opts.kimi
+    ? config.llm.kimiModel
+    : opts.sonnet
+      ? 'claude-sonnet-5'
+      : opts.fast
+        ? config.llm.fastModel
+        : config.llm.generationModel;
+  let llmGen = llm;
+  if (opts.kimi) {
+    requireEnv('MOONSHOT_API_KEY');
+    llmGen = new LLMClient({
+      apiKey: process.env['MOONSHOT_API_KEY'],
+      baseURL: config.llm.kimiBaseURL,
+      supportsCache: false,
+    });
+  }
   process.stdout.write(`Gerando laudo (${genModel})… `);
   const regras = loadRegras(config, mask.id);
-  const gen = await generate(llm, {
+  const gen = await generate(llmGen, {
     mask,
     transcript,
     profileName: profile.name,
@@ -397,6 +409,7 @@ async function main() {
     perfil: flags.get('perfil') as string | undefined,
     fast: Boolean(flags.get('fast')),
     sonnet: Boolean(flags.get('sonnet')),
+    kimi: Boolean(flags.get('kimi')),
     dryRun: Boolean(flags.get('dry-run')),
   };
 

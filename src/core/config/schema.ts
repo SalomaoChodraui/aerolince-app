@@ -17,6 +17,9 @@ export const ConfigSchema = z.object({
     // qualidade" com Sonnet: laudo.config.json {"llm":{"generationModel":"claude-sonnet-5"}}
     generationModel: z.string().default('claude-haiku-4-5'),
     fastModel: z.string().default('claude-haiku-4-5'),
+    // Teste A/B com Kimi (Moonshot): flag --kimi na CLI + MOONSHOT_API_KEY no .env
+    kimiModel: z.string().default('kimi-k2-0905-preview'),
+    kimiBaseURL: z.string().default('https://api.moonshot.ai/anthropic'),
   }),
 });
 
@@ -73,6 +76,8 @@ export function loadConfig(appRoot: string): Config {
       selectionModel: 'claude-haiku-4-5',
       generationModel: 'claude-haiku-4-5',
       fastModel: 'claude-haiku-4-5',
+      kimiModel: 'kimi-k2-0905-preview',
+      kimiBaseURL: 'https://api.moonshot.ai/anthropic',
     },
   };
   const file = join(appRoot, 'laudo.config.json');

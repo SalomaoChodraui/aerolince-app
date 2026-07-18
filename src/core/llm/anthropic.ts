@@ -29,18 +29,32 @@ export interface CompleteParams {
  * Wrapper fino do Claude: aplica cache_control nos blocos estáveis e desliga o
  * thinking adaptativo em modelos Sonnet 5 (latência previsível para geração de laudo).
  */
+export interface LLMClientOptions {
+  apiKey?: string;
+  /** Endpoint alternativo compatível com a API Anthropic (ex.: Moonshot/Kimi). */
+  baseURL?: string;
+  /** Desligar cache_control para provedores que não suportam prompt caching. */
+  supportsCache?: boolean;
+}
+
 export class LLMClient {
   private client: Anthropic;
+  private supportsCache: boolean;
 
-  constructor(apiKey?: string) {
-    this.client = new Anthropic(apiKey ? { apiKey } : undefined);
+  constructor(opts: LLMClientOptions | string = {}) {
+    const o = typeof opts === 'string' ? { apiKey: opts } : opts;
+    this.supportsCache = o.supportsCache ?? true;
+    this.client = new Anthropic({
+      ...(o.apiKey ? { apiKey: o.apiKey } : {}),
+      ...(o.baseURL ? { baseURL: o.baseURL } : {}),
+    });
   }
 
   async complete(params: CompleteParams): Promise<LLMResult> {
     const system = params.system.map((b) => ({
       type: 'text' as const,
       text: b.text,
-      ...(b.cache ? { cache_control: { type: 'ephemeral' as const } } : {}),
+      ...(b.cache && this.supportsCache ? { cache_control: { type: 'ephemeral' as const } } : {}),
     }));
     const response = await this.client.messages.create({
       model: params.model,
@@ -78,6 +92,8 @@ export function estimateCostUSD(model: string, usage: LLMUsage): number {
   const prices: Record<string, [number, number]> = {
     'claude-haiku-4-5': [1, 5],
     'claude-sonnet-5': [3, 15],
+    // Moonshot/Kimi K2 — aproximado; conferir a tabela vigente em platform.moonshot.ai
+    'kimi-': [0.6, 2.5],
   };
   const key = Object.keys(prices).find((k) => model.startsWith(k));
   if (!key) return 0;
