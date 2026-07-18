@@ -20,6 +20,7 @@ function App() {
   const cancelado = useRef(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const faseRef = useRef<Fase>('idle');
+  const drag = useRef<{ offX: number; offY: number; moved: boolean } | null>(null);
   faseRef.current = fase;
 
   async function iniciar() {
@@ -31,13 +32,9 @@ function App() {
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
       window.aerolince.gravando(false);
-      if (cancelado.current) {
-        setFase('idle');
-        return;
-      }
+      if (cancelado.current) return setFase('idle');
       const blob = new Blob(chunks.current, { type: 'audio/webm' });
-      const buf = await blob.arrayBuffer();
-      void window.aerolince.processarAudio(buf);
+      void window.aerolince.processarAudio(await blob.arrayBuffer());
     };
     rec.start();
     recorder.current = rec;
@@ -60,6 +57,34 @@ function App() {
     else if (f === 'idle' || f === 'ok' || f === 'erro') void iniciar();
   }
 
+  // Clique = ditar; arrastar = mover a janela (distinção por movimento do mouse)
+  function onMouseDown(e: React.MouseEvent) {
+    drag.current = { offX: e.screenX - window.screenX, offY: e.screenY - window.screenY, moved: false };
+  }
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const d = drag.current;
+      if (!d) return;
+      const nx = e.screenX - d.offX;
+      const ny = e.screenY - d.offY;
+      if (Math.abs(e.screenX - window.screenX - d.offX) > 3 || Math.abs(e.screenY - window.screenY - d.offY) > 3) {
+        d.moved = true;
+      }
+      if (d.moved) window.aerolince.balaoMover(nx, ny);
+    }
+    function onUp() {
+      const d = drag.current;
+      drag.current = null;
+      if (d && !d.moved) toggle();
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
   useEffect(() => {
     window.aerolince.onAtalhoToggle(toggle);
     window.aerolince.onAtalhoCancelar(() => {
@@ -73,12 +98,12 @@ function App() {
 
   const titulo =
     fase === 'gravando'
-      ? 'Gravando — clique ou Cmd/Ctrl+Shift+D para parar (Esc cancela)'
-      : 'Clique ou Cmd/Ctrl+Shift+D para ditar o laudo';
+      ? 'Gravando — clique para parar (Esc cancela). Arraste para mover.'
+      : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
 
   return (
     <>
-      <button className={`botao ${fase}`} onClick={toggle} title={titulo}>
+      <button className={`botao ${fase}`} onMouseDown={onMouseDown} title={titulo}>
         <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}

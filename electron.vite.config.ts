@@ -22,6 +22,9 @@ export default defineConfig({
         input: {
           float: resolve(import.meta.dirname, 'src/renderer/float/index.html'),
           result: resolve(import.meta.dirname, 'src/renderer/result/index.html'),
+          settings: resolve(import.meta.dirname, 'src/renderer/settings/index.html'),
+          historico: resolve(import.meta.dirname, 'src/renderer/historico/index.html'),
+          onboarding: resolve(import.meta.dirname, 'src/renderer/onboarding/index.html'),
         },
       },
     },

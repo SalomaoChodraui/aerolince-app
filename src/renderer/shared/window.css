@@ -1,0 +1,193 @@
+/* Base das janelas de conteúdo (configurações, histórico, onboarding, boas-vindas) */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-size: 14px;
+  line-height: 1.5;
+}
+::selection {
+  background: var(--oxido-suave);
+}
+
+.janela {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--linha);
+  -webkit-app-region: drag;
+}
+.topo .logo {
+  height: 16px;
+}
+.topo h1 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+.topo .sub {
+  color: var(--texto-suave);
+  font-size: 13px;
+}
+.corpo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+
+.secao {
+  margin-bottom: 26px;
+}
+.secao > h2 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--texto-suave);
+  margin: 0 0 12px;
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--linha);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+.linha .rot {
+  font-weight: 600;
+}
+.linha .desc {
+  font-size: 12px;
+  color: var(--texto-suave);
+  margin-top: 2px;
+}
+.linha .ctrl {
+  flex-shrink: 0;
+}
+
+input[type='text'],
+input[type='password'],
+select,
+textarea {
+  font-family: var(--fonte);
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--linha);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--texto);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--oxido-suave);
+  border-color: var(--oxido);
+}
+
+button {
+  font-family: var(--fonte);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 15px;
+  border-radius: 9px;
+  border: 1px solid var(--linha);
+  background: var(--surface);
+  color: var(--texto);
+  cursor: pointer;
+}
+button:hover {
+  border-color: color-mix(in srgb, var(--texto) 35%, transparent);
+}
+button:focus-visible {
+  outline: 2px solid var(--oxido);
+  outline-offset: 1px;
+}
+button.primario {
+  background: var(--oxido);
+  color: #fff;
+  border-color: var(--oxido);
+}
+button.primario:hover {
+  background: var(--oxido-escuro);
+  border-color: var(--oxido-escuro);
+}
+button.fantasma {
+  background: transparent;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Switch (toggle) */
+.switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch .trilho {
+  position: absolute;
+  inset: 0;
+  background: var(--linha);
+  border-radius: 999px;
+  transition: background 0.15s;
+}
+.switch .trilho::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.switch input:checked + .trilho {
+  background: var(--oxido);
+}
+.switch input:checked + .trilho::before {
+  transform: translateX(18px);
+}
+
+input[type='range'] {
+  accent-color: var(--oxido);
+}
+.rodape-janela {
+  padding: 12px 22px;
+  border-top: 1px solid var(--linha);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+.dica {
+  font-size: 12px;
+  color: var(--texto-suave);
+  margin-right: auto;
+}

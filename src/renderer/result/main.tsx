@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
 import logoUrl from '../assets/aerolince-logo-primary.svg';
+import { iniciarTema } from '../shared/glass.js';
 
 interface Resultado {
   report: string;
@@ -11,6 +12,7 @@ interface Resultado {
   tempos: { sttMs: number; selecaoMs: number; geracaoMs: number };
   custoUSD: number;
   savedPath: string;
+  arquivo: string;
 }
 
 type RefinoFase = 'idle' | 'gravando' | 'processando';
@@ -24,12 +26,25 @@ function App() {
   const [refinoTexto, setRefinoTexto] = useState('');
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const arquivo = useRef<string>('');
+  const geradoRef = useRef<string>('');
+
+  // Loop de feedback: grava a versão final editada pelo médico (o diff
+  // gerado→final alimenta o aprendizado; nenhum dado de paciente envolvido).
+  function persistirEdicao(novo: string) {
+    if (arquivo.current && novo !== geradoRef.current) {
+      void window.aerolince.salvarFinal(arquivo.current, novo);
+    }
+  }
 
   useEffect(() => {
+    void iniciarTema();
     window.aerolince.onResultado((p) => {
       const r = p as unknown as Resultado;
       setResultado(r);
       setTexto(r.report);
+      arquivo.current = r.arquivo ?? '';
+      geradoRef.current = r.report;
       setErro(null);
       setCopiado(false);
       setRefinoFase('idle');
@@ -42,6 +57,7 @@ function App() {
 
   async function copiar() {
     await window.aerolince.copiar(texto);
+    persistirEdicao(texto);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
   }
@@ -91,13 +107,25 @@ function App() {
             {b}
           </span>
         ))}
+        <button
+          className="menu-btn"
+          title="Configurações, histórico e ajuda"
+          onClick={() => window.aerolince.abrir('settings')}
+        >
+          ☰
+        </button>
       </div>
 
       {erro && <div className="erro-box">{erro}</div>}
 
       {resultado ? (
         <>
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} spellCheck={false} />
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onBlur={(e) => persistirEdicao(e.target.value)}
+            spellCheck={false}
+          />
           <div className="acoes">
             <button className="primario" onClick={copiar}>
               {copiado ? '✓ Copiado' : 'Copiar de novo'}

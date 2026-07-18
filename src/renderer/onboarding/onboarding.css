@@ -1,0 +1,92 @@
+.onb {
+  flex-direction: row;
+}
+.onb-arte {
+  width: 260px;
+  background: linear-gradient(160deg, var(--oxido) 0%, var(--oxido-escuro) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.onb-icone {
+  color: var(--branco);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.passo-emoji {
+  font-size: 52px;
+  line-height: 1;
+}
+.onb-conteudo {
+  flex: 1;
+  padding: 42px 38px 24px;
+  display: flex;
+  flex-direction: column;
+}
+.onb-conteudo h1 {
+  font-size: 25px;
+  font-weight: 800;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+.onb-conteudo p {
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--texto);
+  margin: 0;
+}
+.onb-conteudo em {
+  color: var(--oxido);
+  font-style: italic;
+}
+kbd {
+  font-family: var(--fonte);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface-2);
+  border: 1px solid var(--linha);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.onb-aviso {
+  margin-top: 22px;
+  padding: 14px 16px;
+  background: var(--oxido-suave);
+  border: 1px solid color-mix(in srgb, var(--oxido) 40%, transparent);
+  border-radius: 12px;
+  font-size: 13.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.onb-nav {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 24px;
+}
+.onb-dots {
+  display: flex;
+  gap: 7px;
+}
+.onb-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--linha);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.onb-dots span.on {
+  background: var(--oxido);
+}
+.onb-botoes {
+  display: flex;
+  gap: 8px;
+}

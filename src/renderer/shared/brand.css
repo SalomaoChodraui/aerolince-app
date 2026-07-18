@@ -12,8 +12,47 @@
   --oxido-escuro: #c24e35;
   --papel: #f2ece3; /* bege papel */
   --branco: #f7f2ec; /* branco quente */
-  --linha: rgba(24, 23, 22, 0.16);
-  --texto-suave: rgba(24, 23, 22, 0.62);
-  --oxido-suave: rgba(217, 91, 63, 0.12);
   --fonte: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+
+  /* Tokens semânticos — tema claro (default) */
+  --bg: #f2ece3;
+  --surface: #f7f2ec;
+  --surface-2: #ffffff;
+  --texto: #181716;
+  --texto-suave: rgba(24, 23, 22, 0.62);
+  --linha: rgba(24, 23, 22, 0.16);
+  --oxido-suave: rgba(217, 91, 63, 0.12);
+}
+
+/* Tema escuro — segue o sistema (nativeTheme controla o prefers-color-scheme) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1917;
+    --surface: #232120;
+    --surface-2: #2b2927;
+    --texto: #f2ece3;
+    --texto-suave: rgba(242, 236, 227, 0.6);
+    --linha: rgba(242, 236, 227, 0.16);
+    --oxido: #e56a4d;
+    --oxido-suave: rgba(229, 106, 77, 0.16);
+  }
+}
+
+/* Liquid glass: janela recebe vibrancy nativo; o fundo fica translúcido */
+:root[data-glass='1'] {
+  --bg: transparent;
+  --surface: color-mix(in srgb, var(--branco) 55%, transparent);
+  --surface-2: color-mix(in srgb, var(--branco) 72%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-glass='1'] {
+    --surface: color-mix(in srgb, #232120 48%, transparent);
+    --surface-2: color-mix(in srgb, #2b2927 62%, transparent);
+  }
+}
+
+body {
+  font-family: var(--fonte);
+  color: var(--texto);
+  background: var(--bg);
 }

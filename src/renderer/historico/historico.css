@@ -1,0 +1,84 @@
+.hist-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 0;
+}
+.hist-lista {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--linha);
+}
+.hist-lista li {
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+.hist-lista li:hover {
+  background: var(--surface-2);
+}
+.hist-lista li.sel {
+  background: var(--oxido-suave);
+}
+.hist-cab {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+.hist-exame {
+  font-weight: 700;
+  font-size: 12.5px;
+}
+.hist-data {
+  font-size: 11px;
+  color: var(--texto-suave);
+}
+.hist-prev {
+  font-size: 12px;
+  color: var(--texto-suave);
+  margin-top: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hist-tag {
+  display: inline-block;
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--oxido);
+  border: 1px solid var(--oxido);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+.hist-detalhe {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.hist-detalhe textarea {
+  flex: 1;
+  margin: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--linha);
+  background: var(--surface-2);
+  color: var(--texto);
+  font: 13px/1.55 'SF Mono', Menlo, Consolas, monospace;
+  resize: none;
+}
+.vazio,
+.vazio-detalhe {
+  color: var(--texto-suave);
+  font-size: 13px;
+  text-align: center;
+  padding: 30px;
+}
+.vazio-detalhe {
+  margin: auto;
+}

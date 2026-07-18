@@ -1,12 +1,31 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+
+/** Atalho/macro do médico: um comando pronto que ele aciona sem ditar. */
+export const MacroSchema = z.object({
+  id: z.string(),
+  nome: z.string(),
+  comando: z.string(),
+});
+export type Macro = z.infer<typeof MacroSchema>;
 
 export const ConfigSchema = z.object({
   masksDir: z.string(),
   profilesDir: z.string(),
   outputDir: z.string(),
   perfilPadrao: z.string().default('padrao'),
+  onboardingConcluido: z.boolean().default(false),
+  ui: z
+    .object({
+      tema: z.enum(['auto', 'claro', 'escuro']).default('auto'),
+      liquidGlass: z.boolean().default(true),
+      opacidadeBalao: z.number().min(0.35).max(1).default(1),
+      atalho: z.string().default('CommandOrControl+Shift+D'),
+      balaoPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
+    })
+    .prefault({}),
+  macros: z.array(MacroSchema).default([]),
   stt: z.object({
     model: z.string().default('gpt-4o-transcribe'),
     glossario: z.array(z.string()).default([]),
@@ -66,22 +85,40 @@ export const GLOSSARIO_PADRAO = [
  * senão usa defaults. `appRoot` normalmente é process.cwd() (rodar via npm em app/).
  */
 export function loadConfig(appRoot: string): Config {
-  const defaults: Config = {
+  const defaults = {
     masksDir: resolve(appRoot, '..', 'biblioteca-mascaras'),
     profilesDir: resolve(appRoot, 'perfis'),
     outputDir: resolve(appRoot, '..', 'Laudos Gerados'),
-    perfilPadrao: 'padrao',
     stt: { model: 'gpt-4o-transcribe', glossario: GLOSSARIO_PADRAO },
     llm: {
-      selectionModel: 'claude-haiku-4-5',
-      generationModel: 'claude-haiku-4-5',
-      fastModel: 'claude-haiku-4-5',
       kimiModel: 'kimi-k2-0905-preview',
       kimiBaseURL: 'https://api.moonshot.ai/anthropic',
     },
   };
   const file = join(appRoot, 'laudo.config.json');
-  if (!existsSync(file)) return defaults;
-  const user = JSON.parse(readFileSync(file, 'utf8'));
-  return ConfigSchema.parse({ ...defaults, ...user, stt: { ...defaults.stt, ...user.stt }, llm: { ...defaults.llm, ...user.llm } });
+  const user = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  return ConfigSchema.parse({
+    ...defaults,
+    ...user,
+    stt: { ...defaults.stt, ...user.stt },
+    llm: { ...defaults.llm, ...user.llm },
+  });
+}
+
+const CONFIG_FILE = 'laudo.config.json';
+
+/**
+ * Aplica um patch raso à configuração persistida (laudo.config.json) e devolve
+ * a config resultante já validada. Usado pela tela de configurações via IPC.
+ */
+export function saveConfig(appRoot: string, patch: Record<string, unknown>): Config {
+  const file = join(appRoot, CONFIG_FILE);
+  const atual = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  const merged = { ...atual, ...patch };
+  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt)
+  for (const chave of ['ui', 'llm', 'stt'] as const) {
+    if (patch[chave]) merged[chave] = { ...(atual[chave] ?? {}), ...(patch[chave] as object) };
+  }
+  writeFileSync(file, JSON.stringify(merged, null, 2), 'utf8');
+  return loadConfig(appRoot);
 }
