@@ -14,6 +14,11 @@ describe('loadLibrary', () => {
     expect(abdome!.body).toContain('<!-- orgao:');
   });
 
+  it('ignora .md sem frontmatter de máscara (anotações na pasta)', () => {
+    const masks = loadLibrary(EXEMPLO_DIR);
+    expect(masks.every((m) => typeof m.id === 'string' && m.id.length > 0)).toBe(true);
+  });
+
   it('monta catálogo compacto de uma linha por máscara', () => {
     const masks = loadLibrary(EXEMPLO_DIR);
     const catalog = buildCatalog(masks);

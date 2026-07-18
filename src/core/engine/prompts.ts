@@ -11,7 +11,9 @@ O radiologista ditou um comando curto. Escolha no catálogo a máscara de laudo 
 Regras:
 - Responda APENAS com JSON válido, sem markdown: {"mask_id": "<id>", "confianca": "alta" | "media" | "baixa"}
 - Use "confianca": "alta" só quando o exame é inequívoco.
-- Se o comando não permitir identificar o exame ou nenhuma máscara servir, responda {"mask_id": "nenhuma", "confianca": "baixa"}.
+- Deduza o exame pela anatomia citada quando o nome não for dito (ex.: "artéria cerebral média" → crânio; "platô tibial" → joelho; "cólon", "rim" → abdome). Achado típico de um exame identifica o exame.
+- Quando existirem variantes com e sem contraste do mesmo exame: se o comando NÃO citar contraste, escolha a variante SEM contraste. Só escolha a com contraste se o comando disser "com contraste" (ou citar fase/realce).
+- Responda {"mask_id": "nenhuma", "confianca": "baixa"} apenas quando o comando não citar nem o exame nem estrutura anatômica que o identifique.
 
 Catálogo de máscaras (id | nome | sinônimos | região):
 ${catalog}`;

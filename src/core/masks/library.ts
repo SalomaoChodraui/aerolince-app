@@ -10,6 +10,8 @@ export function loadLibrary(dir: string): Mask[] {
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.md')).sort()) {
     const filePath = join(dir, file);
     const { data, content } = matter(readFileSync(filePath, 'utf8'));
+    // Arquivos .md sem frontmatter de máscara (anotações, documentos) são ignorados
+    if (typeof data.id !== 'string') continue;
     const fm = MaskFrontmatterSchema.parse(data);
     if (seen.has(fm.id)) throw new Error(`id de máscara duplicado: ${fm.id} (${file})`);
     seen.add(fm.id);
