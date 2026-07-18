@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Aerolince — Laudo (rascunho)</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body, #root { height: 100%; margin: 0; }
+      body {
+        font-family: -apple-system, 'Segoe UI', sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .app { display: flex; flex-direction: column; height: 100%; }
+      .cabecalho {
+        padding: 10px 14px;
+        background: #fff;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .exame { font-weight: 600; font-size: 14px; }
+      .chip {
+        font-size: 11px;
+        background: #fef3c7;
+        border: 1px solid #fcd34d;
+        border-radius: 999px;
+        padding: 2px 8px;
+      }
+      .chip.conf { background: #dbeafe; border-color: #93c5fd; }
+      textarea {
+        flex: 1;
+        margin: 12px 14px 8px;
+        padding: 12px;
+        font: 13px/1.5 'SF Mono', Menlo, Consolas, monospace;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        resize: none;
+        background: #fff;
+      }
+      textarea:focus { outline: 2px solid #2563eb33; }
+      .acoes {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 0 14px 8px;
+      }
+      button {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button.primario { background: #2563eb; color: #fff; border-color: #2563eb; }
+      .status { font-size: 12px; color: #475569; }
+      .rodape {
+        padding: 8px 14px;
+        font-size: 11px;
+        color: #64748b;
+        border-top: 1px solid #e2e8f0;
+        background: #fff;
+      }
+      .aviso { color: #b45309; font-weight: 600; }
+      .erro-box {
+        margin: 12px 14px;
+        padding: 12px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: #991b1b;
+        font-size: 13px;
+      }
+      .vazio {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        font-size: 14px;
+        text-align: center;
+        padding: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

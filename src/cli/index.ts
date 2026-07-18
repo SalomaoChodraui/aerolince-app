@@ -44,23 +44,7 @@ function loadMasks(config: ReturnType<typeof loadConfig>) {
   return loadLibrary(resolve(APP_ROOT, 'masks-exemplo'));
 }
 
-/** Carrega as REGRAS DO MÉDICO da máscara (gerais + específicas), se existirem. */
-function loadRegras(config: ReturnType<typeof loadConfig>, maskId: string): string | undefined {
-  const dir = join(config.masksDir, 'regras');
-  const parts: string[] = [];
-  for (const f of ['gerais.md', `${maskId}.md`]) {
-    const p = join(dir, f);
-    if (existsSync(p)) parts.push(readFileSync(p, 'utf8').trim());
-  }
-  return parts.length > 0 ? parts.join('\n\n') : undefined;
-}
-
-function loadProfile(config: ReturnType<typeof loadConfig>, id: string) {
-  const path = join(config.profilesDir, `${id}.md`);
-  if (!existsSync(path)) throw new Error(`perfil não encontrado: ${id}`);
-  const { data, content } = matter(readFileSync(path, 'utf8'));
-  return { name: (data.nome as string) ?? id, body: content.trim() };
-}
+import { loadProfile, loadRegras } from '../core/contexto.js';
 
 function requireEnv(name: string): void {
   if (!process.env[name]) {

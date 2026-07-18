@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Aerolince</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        font-family: -apple-system, 'Segoe UI', sans-serif;
+      }
+      #root {
+        width: 96px;
+        height: 96px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-app-region: drag;
+      }
+      .botao {
+        -webkit-app-region: no-drag;
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        font-size: 26px;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        transition: transform 0.1s ease;
+      }
+      .botao:active {
+        transform: scale(0.94);
+      }
+      .idle { background: #2563eb; }
+      .gravando { background: #dc2626; animation: pulsa 1s infinite; }
+      .processando { background: #d97706; }
+      .ok { background: #16a34a; }
+      .erro { background: #dc2626; }
+      @keyframes pulsa {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+        50% { box-shadow: 0 0 0 14px rgba(220, 38, 38, 0); }
+      }
+      .tempo {
+        position: absolute;
+        bottom: 4px;
+        width: 100%;
+        text-align: center;
+        font-size: 10px;
+        color: #fff;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
