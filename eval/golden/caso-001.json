@@ -1,0 +1,5 @@
+{
+  "id": "caso-001-diverticulite",
+  "comando": "essa tomo é uma diverticulite do colo direito não complicada",
+  "mask_esperada": "tc-abdome-total"
+}

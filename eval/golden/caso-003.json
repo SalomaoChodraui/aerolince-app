@@ -1,0 +1,5 @@
+{
+  "id": "caso-003-cranio-normal",
+  "comando": "tomografia de crânio dentro da normalidade",
+  "mask_esperada": "tc-cranio"
+}

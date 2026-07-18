@@ -1,0 +1,5 @@
+{
+  "id": "caso-002-calculo-renal",
+  "comando": "tem um cálculo de 1 centímetro no rim direito com densidade de 500 distando 10 centímetros da pele",
+  "mask_esperada": "tc-abdome-total"
+}

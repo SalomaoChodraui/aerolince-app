@@ -1,0 +1,27 @@
+{
+  "name": "aerolince-laudo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Laudos de TC por comando de voz — Fase 0 (CLI de validação)",
+  "scripts": {
+    "laudo": "tsx src/cli/index.ts",
+    "sanitize": "tsx scripts/sanitize-pdfs.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx src/cli/index.ts eval"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "dotenv": "^17.2.0",
+    "gray-matter": "^4.0.3",
+    "openai": "^6.9.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
