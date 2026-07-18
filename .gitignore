@@ -24,3 +24,6 @@ biblioteca-mascaras/
 # Sistema
 .DS_Store
 laudo.config.json
+
+# Cofre de chaves (criptografado, mas nunca versionar)
+secrets.enc.json
