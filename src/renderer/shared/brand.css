@@ -1,0 +1,19 @@
+/* Identidade Aerolince — D1.3 "Canal ascendente" (branding draft/finalistas-D1.3) */
+@font-face {
+  font-family: 'Manrope';
+  src: url('../assets/Manrope-VariableFont_wght.ttf') format('truetype');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --preto: #181716; /* preto quente */
+  --oxido: #d95b3f; /* vermelho óxido */
+  --oxido-escuro: #c24e35;
+  --papel: #f2ece3; /* bege papel */
+  --branco: #f7f2ec; /* branco quente */
+  --linha: rgba(24, 23, 22, 0.16);
+  --texto-suave: rgba(24, 23, 22, 0.62);
+  --oxido-suave: rgba(217, 91, 63, 0.12);
+  --fonte: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+}

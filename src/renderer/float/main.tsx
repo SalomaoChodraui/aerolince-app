@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import '../shared/brand.css';
+import { SimboloA } from '../shared/SimboloA.js';
 
 type Fase = 'idle' | 'gravando' | 'processando' | 'ok' | 'erro';
-const ICONE: Record<Fase, string> = {
-  idle: '🎙️',
-  gravando: '⏹',
-  processando: '…',
-  ok: '✓',
-  erro: '!',
-};
+
+function Icone({ fase }: { fase: Fase }) {
+  if (fase === 'gravando') return <span className="parar" />;
+  if (fase === 'ok') return <>✓</>;
+  if (fase === 'erro') return <>!</>;
+  return <SimboloA size={30} />;
+}
 
 function App() {
   const [fase, setFase] = useState<Fase>('idle');
@@ -77,7 +79,7 @@ function App() {
   return (
     <>
       <button className={`botao ${fase}`} onClick={toggle} title={titulo}>
-        {ICONE[fase]}
+        <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}
     </>

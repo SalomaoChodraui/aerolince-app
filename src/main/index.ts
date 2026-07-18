@@ -49,6 +49,7 @@ function createResult(): void {
     width: 580,
     height: 720,
     show: false,
+    backgroundColor: '#F2ECE3',
     title: 'Aerolince — Laudo (rascunho)',
     webPreferences: { preload, sandbox: false },
   });

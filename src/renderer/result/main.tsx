@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import '../shared/brand.css';
+import logoUrl from '../assets/aerolince-logo-primary.svg';
 
 interface Resultado {
   report: string;
@@ -80,7 +82,9 @@ function App() {
   return (
     <div className="app">
       <div className="cabecalho">
-        <span className="exame">{resultado ? resultado.maskNome : 'Aerolince'}</span>
+        <img src={logoUrl} alt="Aerolince" className="logo" />
+        {resultado && <span className="separador" />}
+        <span className="exame">{resultado ? resultado.maskNome : ''}</span>
         {resultado && <span className="chip conf">confiança {resultado.confianca}</span>}
         {resultado?.blocosAlterados.map((b) => (
           <span key={b} className="chip" title="bloco alterado em relação à máscara normal">
