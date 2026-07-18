@@ -15,6 +15,7 @@ function Icone({ fase }: { fase: Fase }) {
 function App() {
   const [fase, setFase] = useState<Fase>('idle');
   const [segundos, setSegundos] = useState(0);
+  const [aviso, setAviso] = useState('');
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const cancelado = useRef(false);
@@ -90,16 +91,30 @@ function App() {
     window.aerolince.onAtalhoCancelar(() => {
       if (faseRef.current === 'gravando') parar(true);
     });
-    window.aerolince.onEstado(({ fase: nova }) => {
+    window.aerolince.onEstado(({ fase: nova, msg }) => {
       setFase(nova as Fase);
-      if (nova === 'ok') setTimeout(() => setFase('idle'), 1800);
+      if (nova === 'ok') {
+        setAviso('');
+        setTimeout(() => setFase('idle'), 1800);
+      } else if (nova === 'erro') {
+        // Nunca ficar travado: mostra o motivo e volta ao normal
+        setAviso(msg?.includes('áudio') || msg?.includes('entendi') ? 'sem áudio' : 'erro');
+        setTimeout(() => {
+          setFase('idle');
+          setAviso('');
+        }, 3500);
+      } else {
+        setAviso('');
+      }
     });
   }, []);
 
   const titulo =
     fase === 'gravando'
       ? 'Gravando — clique para parar (Esc cancela). Arraste para mover.'
-      : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
+      : fase === 'erro'
+        ? 'Não consegui gerar o laudo — clique para tentar de novo'
+        : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
 
   return (
     <>
@@ -107,6 +122,7 @@ function App() {
         <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}
+      {fase === 'erro' && aviso && <div className="tempo aviso">{aviso}</div>}
     </>
   );
 }

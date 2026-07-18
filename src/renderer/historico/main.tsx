@@ -14,6 +14,7 @@ interface Item {
   maskId: string;
   transcript: string;
   preview: string;
+  busca: string;
   editado: boolean;
 }
 
@@ -42,12 +43,12 @@ function App() {
   async function copiar() {
     await api.copiar(texto);
     setCopiado(true);
-    setTimeout(() => setCopiado(false), 1500);
+    // Objetivo cumprido: fecha o histórico após copiar
+    setTimeout(() => window.close(), 500);
   }
 
-  const filtrados = busca
-    ? itens.filter((i) => (i.transcript + i.preview + i.maskId).toLowerCase().includes(busca.toLowerCase()))
-    : itens;
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo ? itens.filter((i) => i.busca.includes(termo)) : itens;
 
   return (
     <div className="janela">

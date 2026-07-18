@@ -12,6 +12,8 @@ export interface ItemHistorico {
   maskId: string;
   transcript: string;
   preview: string;
+  /** Texto completo em minúsculas — para a busca casar qualquer achado do laudo. */
+  busca: string;
   editado: boolean;
 }
 
@@ -35,12 +37,15 @@ export function listarHistorico(outputDir: string, limite = 200): ItemHistorico[
       }
     }
     const nome = basename(f, '.txt');
+    const transcript = (meta.transcript as string) ?? '';
+    const maskId = (meta.maskId as string) ?? nome.split('_').slice(2).join('_');
     return {
       arquivo: f,
       data: nome.slice(0, 16).replace('_', ' '),
-      maskId: (meta.maskId as string) ?? nome.split('_').slice(2).join('_'),
-      transcript: (meta.transcript as string) ?? '',
+      maskId,
+      transcript,
       preview: texto.split('\n').filter(Boolean).slice(0, 3).join(' '),
+      busca: `${maskId} ${transcript} ${texto}`.toLowerCase(),
       editado: Boolean(meta.editadoEm),
     };
   });

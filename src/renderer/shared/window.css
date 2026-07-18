@@ -29,6 +29,12 @@ body {
   border-bottom: 1px solid var(--linha);
   -webkit-app-region: drag;
 }
+/* Controles no cabeçalho precisam ser clicáveis (o resto é área de arraste) */
+.topo input,
+.topo button,
+.topo select {
+  -webkit-app-region: no-drag;
+}
 .topo .logo {
   height: 16px;
 }
