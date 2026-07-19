@@ -21,8 +21,9 @@ import { generate, selectMask } from '../core/engine/engine.js';
 import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
-import { matchLocal } from '../core/masks/matcher.js';
+import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
+import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
 import { OpenAISTT } from '../core/stt/openai.js';
 
 const APP_ROOT = process.cwd();
@@ -85,6 +86,10 @@ async function runPipeline(opts: {
   }
   if (!transcript) throw new Error('sem comando: use `texto "…"`, `gravar` ou um arquivo de áudio');
 
+  const san = sanitizeComando(transcript);
+  if (san.avisos.length > 0) console.warn(`⚠️  ${san.avisos.join(' | ')}`);
+  transcript = san.texto;
+
   if (opts.dryRun) {
     console.log('=== DRY RUN (nenhuma chamada de API) ===');
     console.log(`Comando: "${transcript}"`);
@@ -113,13 +118,37 @@ async function runPipeline(opts: {
     selMs = sel.durationMs;
     selCost = estimateCostUSD(config.llm.selectionModel, sel.usage);
     confianca = sel.confianca;
-    if (!sel.mask) {
-      console.error(`\nNão identifiquei o exame (confiança: ${sel.confianca}).`);
+    if (!sel.mask || sel.confianca === 'baixa') {
+      console.error(`\nNão tive certeza do exame (confiança: ${sel.confianca}).`);
       console.error(`Máscaras disponíveis:\n${masks.map((m) => `  ${m.id} — ${m.nome}`).join('\n')}`);
       console.error(`\nRode de novo com --mask <id>.`);
       process.exit(2);
     }
-    mask = sel.mask;
+    if (sel.confianca === 'media') {
+      const sugerida = sel.mask;
+      const candidatos = [sugerida, ...rankMasks(transcript, masks).filter((m) => m.id !== sugerida.id)].slice(0, 3);
+      console.log('\nConfiança média — confirme o exame:');
+      candidatos.forEach((m, k) => console.log(`  ${k + 1}. ${m.nome} [${m.id}]`));
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const resp = await new Promise<string>((res) =>
+        rl.question(`ENTER confirma "${sugerida.nome}", ou digite número/id: `, (x) => res(x.trim())),
+      );
+      rl.close();
+      if (resp) {
+        const porNumero = /^\d+$/.test(resp) ? candidatos[Number(resp) - 1] : undefined;
+        const escolhida = porNumero ?? getMask(masks, resp);
+        if (!escolhida) {
+          console.error(`"${resp}" não é um número da lista nem um id válido.`);
+          process.exit(2);
+        }
+        mask = escolhida;
+        confianca = 'manual';
+      } else {
+        mask = sugerida;
+      }
+    } else {
+      mask = sel.mask;
+    }
   }
   console.log(`Máscara: ${mask.nome} [${mask.id}] (confiança: ${confianca}, ${fmt(selMs)})`);
 
