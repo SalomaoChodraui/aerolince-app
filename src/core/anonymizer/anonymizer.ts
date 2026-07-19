@@ -1,4 +1,4 @@
-import { PATTERNS } from './patterns.js';
+import { PATTERNS, PatternDef } from './patterns.js';
 
 export interface AnonFinding {
   tipo: string;
@@ -101,4 +101,66 @@ export function examTypeFromFilename(filename: string): string | null {
   const base = filename.replace(/\.pdf$/i, '');
   const parts = base.split('_');
   return parts.length >= 3 && parts[2] ? parts[2] : null;
+}
+
+export interface ComandoSanitizado {
+  texto: string;
+  /** Avisos legíveis para o médico (dedup por tipo). */
+  avisos: string[];
+}
+
+const TIPO_LEGIVEL: Record<string, string> = {
+  nome: 'um nome',
+  cpf: 'um CPF',
+  id: 'um número de registro',
+  crm: 'um CRM',
+  telefone: 'um telefone',
+};
+
+/**
+ * Padrões próprios do ditado: param no fim do nome próprio / número, preservando
+ * o conteúdo clínico ao redor (diferente dos rótulos de linha inteira dos PDFs).
+ */
+const COMANDO_EXTRA: PatternDef[] = [
+  {
+    tipo: 'nome',
+    // "paciente João da Silva" / "paciente: João da Silva" / "solicitante Maria Souza"
+    regex:
+      /\b([Pp]aciente|[Ss]olicitante)(\s*[:,]?\s+)((?:[A-ZÀ-Ú][a-zà-úü]+)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][a-zà-úü]+)+)/g,
+    replacement: '$1$2[NOME]',
+  },
+  {
+    tipo: 'id',
+    // "prontuário 123456" ditado sem a pontuação exigida pelo pattern de documento
+    regex: /\b(prontu[aá]rio|registro|protocolo|atendimento)\s+(\d[\d.\-\/]{2,})/gi,
+    replacement: '$1 [ID]',
+  },
+];
+
+/**
+ * Sanitização do COMANDO DITADO antes de qualquer LLM. Datas NÃO são removidas —
+ * em ditado são conteúdo clínico legítimo ("comparar com exame de 15/03/2026");
+ * geram apenas aviso. Os demais identificadores são mascarados.
+ */
+export function sanitizeComando(transcript: string): ComandoSanitizado {
+  const tiposVistos = new Set<string>();
+  let texto = transcript;
+  let temData = false;
+  const aplicaveis = [...COMANDO_EXTRA, ...PATTERNS.filter((p) => p.escopo !== 'documento')];
+  for (const { tipo, regex, replacement } of aplicaveis) {
+    if (tipo === 'data') {
+      if (!temData) temData = new RegExp(regex.source, regex.flags.replace('g', '')).test(texto);
+      continue;
+    }
+    texto = texto.replace(regex, (...args) => {
+      tiposVistos.add(tipo);
+      return replacement.replace(/\$(\d)/g, (_, n) => {
+        const group = args[Number(n)];
+        return typeof group === 'string' ? group : '';
+      });
+    });
+  }
+  const avisos = [...tiposVistos].map((t) => `removi ${TIPO_LEGIVEL[t] ?? t} do comando por privacidade`);
+  if (temData) avisos.push('o comando cita uma data — confira se ela não identifica o paciente');
+  return { texto, avisos };
 }

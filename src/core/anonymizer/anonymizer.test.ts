@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { examTypeFromFilename, patientNameFromFilename, sanitize } from './anonymizer.js';
+import { examTypeFromFilename, patientNameFromFilename, sanitize, sanitizeComando } from './anonymizer.js';
 
 describe('sanitize', () => {
   it('mascara linha "Paciente:" preservando o rótulo', () => {
@@ -99,5 +99,48 @@ describe('examTypeFromFilename', () => {
   it('extrai o tipo de exame', () => {
     expect(examTypeFromFilename('2026-07-02_32488_TORAX_FULANO-DE-TAL.pdf')).toBe('TORAX');
     expect(examTypeFromFilename('2026-07-10_32506_COL-CERVICAL_FULANA.pdf')).toBe('COL-CERVICAL');
+  });
+});
+
+describe('sanitizeComando (ditado → LLM)', () => {
+  it('mascara nome e CPF, PRESERVANDO o conteúdo clínico ao redor', () => {
+    const r = sanitizeComando('tomografia de abdome do paciente João da Silva, CPF 123.456.789-00, com diverticulite');
+    expect(r.texto).toContain('[NOME]');
+    expect(r.texto).toContain('[CPF]');
+    expect(r.texto).not.toContain('João');
+    expect(r.texto).toContain('com diverticulite'); // o achado sobrevive à sanitização
+    expect(r.avisos.length).toBe(2);
+  });
+
+  it('mascara nome ditado com pontuação de rótulo ("paciente: João da Silva")', () => {
+    const r = sanitizeComando('paciente: João da Silva, apendicite aguda');
+    expect(r.texto).not.toContain('João da Silva');
+    expect(r.texto).toContain('apendicite aguda');
+  });
+
+  it('mascara número de prontuário ditado sem pontuação', () => {
+    const r = sanitizeComando('prontuário 123456, tomografia de crânio normal');
+    expect(r.texto).not.toContain('123456');
+    expect(r.texto).toContain('tomografia de crânio normal');
+  });
+
+  it('NÃO remove data (conteúdo clínico), mas avisa', () => {
+    const r = sanitizeComando('comparar com exame de 15/03/2026, estável');
+    expect(r.texto).toContain('15/03/2026');
+    expect(r.avisos.length).toBe(1);
+  });
+
+  it('comando limpo passa intacto e sem avisos', () => {
+    const cmd = 'tomografia de abdome total com contraste, diverticulite do cólon direito não complicada';
+    const r = sanitizeComando(cmd);
+    expect(r.texto).toBe(cmd);
+    expect(r.avisos).toEqual([]);
+  });
+
+  it('deduplica avisos do mesmo tipo', () => {
+    const r = sanitizeComando('paciente João da Silva e solicitante Maria Souza Lima');
+    expect(r.texto).not.toContain('João');
+    expect(r.texto).not.toContain('Maria');
+    expect(r.avisos.length).toBe(1);
   });
 });

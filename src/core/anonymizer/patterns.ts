@@ -8,6 +8,8 @@ export interface PatternDef {
   regex: RegExp;
   /** Substituição; grupos de captura podem preservar o rótulo (ex.: "CPF: [ID]"). */
   replacement: string;
+  /** 'documento': só faz sentido em laudo/PDF (linha rotulada) — o sanitizeComando o ignora. */
+  escopo?: 'documento';
 }
 
 export const PATTERNS: PatternDef[] = [
@@ -17,6 +19,7 @@ export const PATTERNS: PatternDef[] = [
     regex:
       /(^\s*(?:paciente|nome(?:\s+do\s+paciente)?|solicitante|requisitante|m[eé]dico(?:\s+(?:solicitante|assistente|requisitante))?)\s*[:.]\s*)(.+)$/gim,
     replacement: '$1[NOME]',
+    escopo: 'documento',
   },
   // "Dr. Fulano de Tal" / "Dra. Fulana" em qualquer posição
   {
