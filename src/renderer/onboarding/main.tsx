@@ -66,7 +66,7 @@ function App() {
     void iniciarTema();
     void (async () => {
       const s = await api.secretsStatus();
-      setTemChaves(Boolean(s.ANTHROPIC_API_KEY && s.OPENAI_API_KEY));
+      setTemChaves(s.chaves.ANTHROPIC_API_KEY === 'ok' && s.chaves.OPENAI_API_KEY === 'ok');
     })();
   }, []);
 

@@ -30,7 +30,7 @@ import {
   refinarAudio,
   refinarTexto,
 } from './pipeline.js';
-import { NomeChave, carregarChaves, salvarChave, statusChaves } from './secrets.js';
+import { NomeChave, carregarChaves, salvarChave, statusChaves, testarChave } from './secrets.js';
 
 let floatWin: BrowserWindow | null = null;
 let resultWin: BrowserWindow | null = null;
@@ -321,6 +321,7 @@ function registrarIpc(): void {
     salvarChave(appRoot, nome, valor);
     return statusChaves(appRoot);
   });
+  ipcMain.handle('secrets-testar', (_e, nome: NomeChave) => testarChave(nome));
 
   // Histórico e loop de feedback
   ipcMain.handle('historico-listar', () => listarHistorico(getOutputDir()));

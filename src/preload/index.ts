@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 type Resp = { ok: boolean; erro?: string };
+type StatusCofre = { cofreDisponivel: boolean; chaves: Record<string, 'ok' | 'invalida' | 'ausente'> };
 
 const api = {
   // Pipeline
@@ -20,9 +21,11 @@ const api = {
   configSet: (patch: unknown): Promise<unknown> => ipcRenderer.invoke('config-set', patch),
 
   // Chaves de API
-  secretsStatus: (): Promise<Record<string, boolean>> => ipcRenderer.invoke('secrets-status'),
-  secretsSet: (nome: string, valor: string): Promise<Record<string, boolean>> =>
+  secretsStatus: (): Promise<StatusCofre> => ipcRenderer.invoke('secrets-status'),
+  secretsSet: (nome: string, valor: string): Promise<StatusCofre> =>
     ipcRenderer.invoke('secrets-set', nome, valor),
+  secretsTestar: (nome: string): Promise<{ ok: boolean; erro?: string }> =>
+    ipcRenderer.invoke('secrets-testar', nome),
 
   // Histórico + feedback
   historicoListar: (): Promise<unknown[]> => ipcRenderer.invoke('historico-listar'),

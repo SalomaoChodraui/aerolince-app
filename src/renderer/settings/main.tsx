@@ -8,6 +8,8 @@ import type { Macro, RendererConfig } from '../shared/types.js';
 
 const api = window.aerolince;
 
+type StatusCofre = { cofreDisponivel: boolean; chaves: Record<string, 'ok' | 'invalida' | 'ausente'> };
+
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <label className="switch">
@@ -19,7 +21,9 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 
 function App() {
   const [cfg, setCfg] = useState<RendererConfig | null>(null);
-  const [chaves, setChaves] = useState<Record<string, boolean>>({});
+  const [cofre, setCofre] = useState<StatusCofre | null>(null);
+  const [teste, setTeste] = useState<Record<string, string>>({});
+  const [erroChave, setErroChave] = useState<string | null>(null);
   const [novaChave, setNovaChave] = useState<Record<string, string>>({});
   const [salvo, setSalvo] = useState(false);
 
@@ -28,7 +32,7 @@ function App() {
       const c = (await api.configGet()) as RendererConfig;
       setCfg(c);
       aplicarGlass(c);
-      setChaves(await api.secretsStatus());
+      setCofre(await api.secretsStatus());
     })();
   }, []);
 
@@ -52,9 +56,27 @@ function App() {
 
   async function gravarChave(nome: string) {
     const valor = novaChave[nome] ?? '';
-    setChaves(await api.secretsSet(nome, valor));
-    setNovaChave((s) => ({ ...s, [nome]: '' }));
+    setErroChave(null);
+    try {
+      setCofre(await api.secretsSet(nome, valor));
+      setNovaChave((s) => ({ ...s, [nome]: '' }));
+      setTeste((s) => ({ ...s, [nome]: '' }));
+      flashSalvo();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErroChave(msg.replace(/^Error invoking remote method '[^']+': Error: /, ''));
+    }
+  }
+  async function removerChave(nome: string) {
+    setErroChave(null);
+    setCofre(await api.secretsSet(nome, ''));
+    setTeste((s) => ({ ...s, [nome]: '' }));
     flashSalvo();
+  }
+  async function rodarTeste(nome: string) {
+    setTeste((s) => ({ ...s, [nome]: '…' }));
+    const r = await api.secretsTestar(nome);
+    setTeste((s) => ({ ...s, [nome]: r.ok ? '✓ chave válida' : `✗ ${r.erro ?? 'falhou'}` }));
   }
 
   async function addMacro() {
@@ -147,28 +169,54 @@ function App() {
 
         <div className="secao">
           <h2>Chaves de API</h2>
-          {CHAVE_INFO.map(([nome, desc]) => (
-            <div className="linha" key={nome}>
-              <div style={{ flex: 1 }}>
-                <div className="rot">
-                  {nome} {chaves[nome] ? <span style={{ color: 'var(--oxido)' }}>● configurada</span> : <span className="desc">não configurada</span>}
-                </div>
-                <div className="desc">{desc}</div>
-              </div>
-              <input
-                type="password"
-                placeholder={chaves[nome] ? '••••••••  (trocar)' : 'colar chave'}
-                value={novaChave[nome] ?? ''}
-                onChange={(e) => setNovaChave((s) => ({ ...s, [nome]: e.target.value }))}
-                style={{ width: 180 }}
-              />
-              <button onClick={() => gravarChave(nome)} disabled={!(novaChave[nome] ?? '').trim()}>
-                Salvar
-              </button>
+          {cofre && !cofre.cofreDisponivel && (
+            <div className="desc" style={{ padding: '4px 14px', color: '#c0392b' }}>
+              O cofre do sistema não está disponível — não é possível salvar chaves com segurança nesta sessão.
             </div>
-          ))}
+          )}
+          {erroChave && (
+            <div className="desc" style={{ padding: '4px 14px', color: '#c0392b' }}>{erroChave}</div>
+          )}
+          {CHAVE_INFO.map(([nome, desc]) => {
+            const st = cofre?.chaves[nome] ?? 'ausente';
+            return (
+              <div className="linha" key={nome}>
+                <div style={{ flex: 1 }}>
+                  <div className="rot">
+                    {nome}{' '}
+                    {st === 'ok' ? (
+                      <span style={{ color: 'var(--oxido)' }}>● configurada</span>
+                    ) : st === 'invalida' ? (
+                      <span style={{ color: '#c0392b' }}>● inválida — recoloque</span>
+                    ) : (
+                      <span className="desc">não configurada</span>
+                    )}
+                    {teste[nome] && <span className="desc"> · {teste[nome]}</span>}
+                  </div>
+                  <div className="desc">{desc}</div>
+                </div>
+                <input
+                  type="password"
+                  placeholder={st === 'ok' ? '••••••••  (trocar)' : 'colar chave'}
+                  value={novaChave[nome] ?? ''}
+                  onChange={(e) => setNovaChave((s) => ({ ...s, [nome]: e.target.value }))}
+                  style={{ width: 180 }}
+                />
+                <button onClick={() => gravarChave(nome)} disabled={!(novaChave[nome] ?? '').trim()}>
+                  Salvar
+                </button>
+                {st === 'ok' && <button onClick={() => rodarTeste(nome)}>Testar</button>}
+                {st !== 'ausente' && (
+                  <button className="fantasma" onClick={() => removerChave(nome)} title="Remover a chave">
+                    ✕
+                  </button>
+                )}
+              </div>
+            );
+          })}
           <div className="desc" style={{ padding: '4px 14px' }}>
-            As chaves ficam no cofre criptografado do sistema (Keychain / DPAPI), nunca em texto puro.
+            As chaves ficam no cofre criptografado do sistema (Keychain / DPAPI). Ao ditar, o áudio é
+            transcrito pela OpenAI e o texto sanitizado vai à Anthropic — não dite dados do paciente.
           </div>
         </div>
 
