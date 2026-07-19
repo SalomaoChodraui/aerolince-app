@@ -50,4 +50,11 @@ describe('stripMarkers', () => {
     expect(out).toContain('Fígado com dimensões normais.');
     expect(out).not.toMatch(/\n{3,}/);
   });
+
+  it('remove marcador com id acentuado (vazamento real da auditoria)', () => {
+    const texto = 'Fígado normal.\n<!-- orgao: vesícula-biliar -->\nVesícula sem cálculos.';
+    const limpo = stripMarkers(texto);
+    expect(limpo).not.toContain('<!--');
+    expect(limpo).toContain('Vesícula sem cálculos.');
+  });
 });

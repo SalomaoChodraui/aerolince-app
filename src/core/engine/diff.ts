@@ -51,11 +51,14 @@ export function diffAgainstMask(maskBody: string, report: string): DiffResult {
   return { changed, kept };
 }
 
+/** Linha que é só um comentário HTML — qualquer marcador, mesmo malformado/acentuado. */
+const COMMENT_LINE_RE = /^<!--.*-->$/;
+
 /** Remove os marcadores HTML do laudo final (o que vai para o clipboard). */
 export function stripMarkers(report: string): string {
   return report
     .split('\n')
-    .filter((line) => !MARKER_RE.test(line.trim()))
+    .filter((line) => !COMMENT_LINE_RE.test(line.trim()))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
