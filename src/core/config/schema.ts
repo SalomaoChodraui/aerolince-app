@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import { writeFileAtomicSync } from '../atomic-write.js';
 
 /** Atalho/macro do médico: um comando pronto que ele aciona sem ditar. */
 export const MacroSchema = z.object({
@@ -11,6 +12,7 @@ export const MacroSchema = z.object({
 export type Macro = z.infer<typeof MacroSchema>;
 
 export const ConfigSchema = z.object({
+  schemaVersion: z.number().default(1),
   masksDir: z.string(),
   profilesDir: z.string(),
   outputDir: z.string(),
@@ -80,12 +82,11 @@ export const GLOSSARIO_PADRAO = [
   'clips metálicos',
 ];
 
-/**
- * Carrega a configuração de `laudo.config.json` (na raiz do app) se existir,
- * senão usa defaults. `appRoot` normalmente é process.cwd() (rodar via npm em app/).
- */
-export function loadConfig(appRoot: string): Config {
-  const defaults = {
+const CONFIG_FILE = 'laudo.config.json';
+const BACKUP_FILE = 'laudo.config.json.bak';
+
+function defaultsDe(appRoot: string) {
+  return {
     masksDir: resolve(appRoot, '..', 'biblioteca-mascaras'),
     profilesDir: resolve(appRoot, 'perfis'),
     outputDir: resolve(appRoot, '..', 'Laudos Gerados'),
@@ -95,30 +96,80 @@ export function loadConfig(appRoot: string): Config {
       kimiBaseURL: 'https://api.moonshot.ai/anthropic',
     },
   };
-  const file = join(appRoot, 'laudo.config.json');
-  const user = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+}
+
+/** Migrações do overlay por schemaVersion (idempotentes). Hoje só existe a v1. */
+function migrarOverlay(raw: Record<string, unknown>): Record<string, unknown> {
+  return raw;
+}
+
+function mesclar(defaults: ReturnType<typeof defaultsDe>, user: Record<string, unknown>): Config {
   return ConfigSchema.parse({
     ...defaults,
     ...user,
-    stt: { ...defaults.stt, ...user.stt },
-    llm: { ...defaults.llm, ...user.llm },
+    stt: { ...defaults.stt, ...(user['stt'] as object | undefined) },
+    llm: { ...defaults.llm, ...(user['llm'] as object | undefined) },
   });
 }
 
-const CONFIG_FILE = 'laudo.config.json';
+function parseOverlay(texto: string): Record<string, unknown> {
+  const raw: unknown = JSON.parse(texto);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('config não é um objeto');
+  return migrarOverlay(raw as Record<string, unknown>);
+}
+
+/** Overlay bruto atual (sem recuperação) — base do merge do saveConfig. */
+function lerOverlayBruto(file: string): Record<string, unknown> {
+  if (!existsSync(file)) return {};
+  try {
+    return parseOverlay(readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
 
 /**
- * Aplica um patch raso à configuração persistida (laudo.config.json) e devolve
- * a config resultante já validada. Usado pela tela de configurações via IPC.
+ * Carrega a configuração com recuperação: arquivo corrompido (JSON ou schema)
+ * é PRESERVADO (renomeado laudo.config.corrompido-<ts>.json), o backup .bak
+ * assume se for válido; sem backup, valem os defaults. Corrupção nunca
+ * impede o boot (P0-06 da auditoria).
+ */
+export function loadConfig(appRoot: string): Config {
+  const defaults = defaultsDe(appRoot);
+  const file = join(appRoot, CONFIG_FILE);
+  const bak = join(appRoot, BACKUP_FILE);
+  if (!existsSync(file)) return mesclar(defaults, {});
+  try {
+    return mesclar(defaults, parseOverlay(readFileSync(file, 'utf8')));
+  } catch {
+    renameSync(file, join(appRoot, `laudo.config.corrompido-${Date.now()}.json`));
+    if (existsSync(bak)) {
+      try {
+        const config = mesclar(defaults, parseOverlay(readFileSync(bak, 'utf8')));
+        copyFileSync(bak, file);
+        return config;
+      } catch {
+        /* backup também inválido — segue para defaults */
+      }
+    }
+    return mesclar(defaults, {});
+  }
+}
+
+/**
+ * Aplica um patch raso à configuração persistida e devolve a config validada.
+ * Valida ANTES de tocar o disco; grava com backup (.bak) e escrita atômica.
  */
 export function saveConfig(appRoot: string, patch: Record<string, unknown>): Config {
   const file = join(appRoot, CONFIG_FILE);
-  const atual = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-  const merged = { ...atual, ...patch };
+  const atual = lerOverlayBruto(file);
+  const merged: Record<string, unknown> = { ...atual, ...patch, schemaVersion: 1 };
   // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt)
   for (const chave of ['ui', 'llm', 'stt'] as const) {
-    if (patch[chave]) merged[chave] = { ...(atual[chave] ?? {}), ...(patch[chave] as object) };
+    if (patch[chave]) merged[chave] = { ...((atual[chave] as object | undefined) ?? {}), ...(patch[chave] as object) };
   }
-  writeFileSync(file, JSON.stringify(merged, null, 2), 'utf8');
-  return loadConfig(appRoot);
+  const config = mesclar(defaultsDe(appRoot), merged); // lança se o patch for inválido — arquivo intacto
+  if (existsSync(file)) copyFileSync(file, join(appRoot, BACKUP_FILE));
+  writeFileAtomicSync(file, JSON.stringify(merged, null, 2));
+  return config;
 }
