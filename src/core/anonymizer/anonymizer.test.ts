@@ -143,4 +143,23 @@ describe('sanitizeComando (ditado → LLM)', () => {
     expect(r.texto).not.toContain('Maria');
     expect(r.avisos.length).toBe(1);
   });
+
+  it('mascara nome ÚNICO após o gatilho ("paciente Maria")', () => {
+    const r = sanitizeComando('paciente Maria, dor abdominal em fossa ilíaca direita');
+    expect(r.texto).not.toContain('Maria');
+    expect(r.texto).toContain('[NOME]');
+    expect(r.texto).toContain('dor abdominal em fossa ilíaca direita');
+  });
+
+  it('mascara prontuário com palavra de preenchimento ("prontuário número 123456")', () => {
+    const r = sanitizeComando('prontuário número 123456, dor lombar');
+    expect(r.texto).not.toContain('123456');
+    expect(r.texto).toContain('dor lombar');
+  });
+
+  it('mascara prontuário com abreviação ("prontuário nº 123456")', () => {
+    const r = sanitizeComando('prontuário nº 123456');
+    expect(r.texto).not.toContain('123456');
+    expect(r.texto).toContain('[ID]');
+  });
 });

@@ -124,15 +124,15 @@ const TIPO_LEGIVEL: Record<string, string> = {
 const COMANDO_EXTRA: PatternDef[] = [
   {
     tipo: 'nome',
-    // "paciente João da Silva" / "paciente: João da Silva" / "solicitante Maria Souza"
+    // "paciente João da Silva" / "paciente: João da Silva" / "paciente Maria" / "solicitante Maria Souza"
     regex:
-      /\b([Pp]aciente|[Ss]olicitante)(\s*[:,]?\s+)((?:[A-ZÀ-Ú][a-zà-úü]+)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][a-zà-úü]+)+)/g,
+      /\b([Pp]aciente|[Ss]olicitante)(\s*[:,]?\s+)((?:[A-ZÀ-Ú][a-zà-úü]+)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][a-zà-úü]+)*)/g,
     replacement: '$1$2[NOME]',
   },
   {
     tipo: 'id',
-    // "prontuário 123456" ditado sem a pontuação exigida pelo pattern de documento
-    regex: /\b(prontu[aá]rio|registro|protocolo|atendimento)\s+(\d[\d.\-\/]{2,})/gi,
+    // "prontuário 123456" / "prontuário número 123456" / "prontuário nº 123456" ditado sem pontuação
+    regex: /\b(prontu[aá]rio|registro|protocolo|atendimento)\s+(?:n(?:[ºo°.]|úmero)?\s+)?(\d[\d.\-\/]{2,})/gi,
     replacement: '$1 [ID]',
   },
 ];
