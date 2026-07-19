@@ -28,6 +28,16 @@ export class PatchError extends Error {}
 
 const HEADER_RE = /^@@\s*(.+?)\s*$/;
 
+/** Normaliza um id de bloco para o formato canônico ASCII kebab-case (o único que stripMarkers/máscaras usam). */
+function normalizarId(id: string): string {
+  return id
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9/]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export function parsePatches(raw: string): PatchOp[] {
   const text = raw.trim().replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '');
   const lines = text.split('\n');
@@ -61,15 +71,15 @@ export function parsePatches(raw: string): PatchOp[] {
       // Tolerância: o modelo às vezes usa "substituir: tecnica/titulo" em vez do cabeçalho próprio
       if (alvoN === 'tecnica') current = { tipo: 'tecnica', texto: '' };
       else if (alvoN === 'titulo') current = { tipo: 'titulo', texto: '' };
-      else current = { tipo: 'substituir', alvo, texto: '' };
+      else current = { tipo: 'substituir', alvo: normalizarId(alvo), texto: '' };
     } else if (header.startsWith('inserir-apos:') || header.startsWith('inserir-antes:')) {
       const tipo = header.startsWith('inserir-antes:') ? 'inserir-antes' : 'inserir-apos';
       const resto = header.slice(header.indexOf(':') + 1);
       const [alvo, idParte] = resto.split('|');
       current = {
         tipo,
-        alvo: alvo!.trim(),
-        novoId: idParte?.replace(/^\s*id:\s*/, '').trim() || 'novo',
+        alvo: normalizarId(alvo!.trim()),
+        novoId: normalizarId(idParte?.replace(/^\s*id:\s*/, '').trim() ?? '') || 'novo',
         texto: '',
       };
     } else {
@@ -77,6 +87,11 @@ export function parsePatches(raw: string): PatchOp[] {
     }
   }
   flush();
+  for (const op of ops) {
+    if (op.tipo !== 'sem-alteracoes' && !op.texto) {
+      throw new PatchError(`patch "${op.tipo}${op.alvo ? `: ${op.alvo}` : ''}" com texto vazio`);
+    }
+  }
   if (ops.length === 0) throw new PatchError('resposta sem nenhum patch reconhecível');
   return ops;
 }

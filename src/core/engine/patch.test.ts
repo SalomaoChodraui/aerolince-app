@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPatches, parsePatches, patchedIds } from './patch.js';
+import { PatchError, applyPatches, parsePatches, patchedIds } from './patch.js';
 
 const MASK = `TOMOGRAFIA COMPUTADORIZADA DO JOELHO [LADO]
 
@@ -85,5 +85,25 @@ Fratura do platô tibial lateral.`;
 
   it('resposta sem patches lança PatchError', () => {
     expect(() => parsePatches('O laudo está normal.')).toThrow(/sem nenhum patch/);
+  });
+});
+
+describe('normalização de ids (P0-04)', () => {
+  it('normaliza novoId acentuado para ascii kebab-case', () => {
+    const ops = parsePatches('@@ inserir-apos: figado | id: vesícula-biliar\nVesícula com cálculo.');
+    expect(ops[0]!.novoId).toBe('vesicula-biliar');
+  });
+
+  it('normaliza alvo acentuado para casar bloco ascii da máscara', () => {
+    const ops = parsePatches('@@ substituir: fígado\nFígado com esteatose.');
+    expect(ops[0]!.alvo).toBe('figado');
+  });
+
+  it('rejeita substituição com texto vazio', () => {
+    expect(() => parsePatches('@@ substituir: rins\n')).toThrow(PatchError);
+  });
+
+  it('rejeita inserção com texto vazio', () => {
+    expect(() => parsePatches('@@ inserir-apos: rins | id: novo\n')).toThrow(PatchError);
   });
 });

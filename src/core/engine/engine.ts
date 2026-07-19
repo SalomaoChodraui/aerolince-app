@@ -5,6 +5,7 @@ import { buildCatalog, getMask } from '../masks/library.js';
 import { resolverContraste } from '../masks/matcher.js';
 import { DiffResult, parseOrganBlocks, stripMarkers } from './diff.js';
 import { PatchError, applyPatches, parsePatches, patchedIds } from './patch.js';
+import { validarLaudo } from './validate.js';
 import {
   GENERATION_RULES,
   generationContext,
@@ -32,6 +33,8 @@ export interface GenerationResult {
   report: string;
   /** Laudo com marcadores (para diff e refino posteriores). */
   reportRaw: string;
+  /** Avisos não bloqueantes do validador (ex.: placeholder de anonimização no texto). */
+  avisos: string[];
   diff: DiffResult;
   durationMs: number;
   usage: LLMUsage;
@@ -87,8 +90,10 @@ export async function selectMask(
 
 interface PatchRun {
   reportRaw: string;
+  report: string;
   changed: string[];
   usage: LLMUsage;
+  avisos: string[];
 }
 
 /**
@@ -113,24 +118,25 @@ async function runPatches(
     usage = addUsage(usage, result.usage);
     try {
       const ops = parsePatches(result.text);
-      return { reportRaw: applyPatches(baseBody, ops), changed: patchedIds(ops), usage };
+      const reportRaw = applyPatches(baseBody, ops);
+      const report = stripMarkers(reportRaw);
+      const val = validarLaudo(report);
+      if (val.erros.length > 0) throw new PatchError(val.erros.join('; '));
+      return { reportRaw, report, changed: patchedIds(ops), usage, avisos: val.avisos };
     } catch (err) {
       if (!(err instanceof PatchError)) throw err;
       lastErr = err.message;
     }
   }
-  throw new Error(`geração falhou no formato de patches: ${lastErr}`);
+  throw new Error(`geração falhou na validação do laudo: ${lastErr}`);
 }
 
-function buildResult(
-  maskBody: string,
-  run: PatchRun,
-  t0: number,
-): GenerationResult {
+function buildResult(maskBody: string, run: PatchRun, t0: number): GenerationResult {
   const organIds = parseOrganBlocks(maskBody).map((b) => b.id);
   return {
-    report: stripMarkers(run.reportRaw),
+    report: run.report,
     reportRaw: run.reportRaw,
+    avisos: run.avisos,
     diff: {
       changed: run.changed,
       kept: organIds.filter((id) => !run.changed.includes(id)),
