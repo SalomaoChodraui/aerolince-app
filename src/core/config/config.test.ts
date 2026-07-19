@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -30,6 +30,17 @@ describe('loadConfig com recuperação', () => {
     const c = loadConfig(root);
     expect(c.ui.tema).toBe('auto');
     expect(readdirSync(root).some((f) => f.startsWith('laudo.config.corrompido-'))).toBe(true);
+  });
+
+  it('falha ao preservar o corrompido (ex.: diretório somente leitura) não impede o boot', () => {
+    writeFileSync(join(root, 'laudo.config.json'), '{{{ nem json', 'utf8');
+    chmodSync(root, 0o555); // impede rename/create no diretório (permissão/disco simulados)
+    try {
+      const c = loadConfig(root);
+      expect(c.perfilPadrao).toBe('padrao');
+    } finally {
+      chmodSync(root, 0o755); // restaura para permitir limpeza do diretório temporário
+    }
   });
 
   it('backup .bak assume quando o principal corrompe', () => {

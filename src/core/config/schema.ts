@@ -142,7 +142,12 @@ export function loadConfig(appRoot: string): Config {
   try {
     return mesclar(defaults, parseOverlay(readFileSync(file, 'utf8')));
   } catch {
-    renameSync(file, join(appRoot, `laudo.config.corrompido-${Date.now()}.json`));
+    try {
+      renameSync(file, join(appRoot, `laudo.config.corrompido-${Date.now()}.json`));
+    } catch {
+      /* não foi possível preservar o arquivo corrompido (permissão, disco, etc.) —
+         segue para o backup/defaults; corrupção nunca pode impedir o boot */
+    }
     if (existsSync(bak)) {
       try {
         const config = mesclar(defaults, parseOverlay(readFileSync(bak, 'utf8')));
