@@ -9,10 +9,17 @@ interface Resultado {
   maskNome: string;
   confianca: string;
   blocosAlterados: string[];
+  avisos?: string[];
   tempos: { sttMs: number; selecaoMs: number; geracaoMs: number };
   custoUSD: number;
   savedPath: string;
   arquivo: string;
+}
+
+interface Confirmacao {
+  transcript: string;
+  candidatos: { id: string; nome: string }[];
+  avisos?: string[];
 }
 
 type RefinoFase = 'idle' | 'gravando' | 'processando';
@@ -24,6 +31,8 @@ function App() {
   const [copiado, setCopiado] = useState(false);
   const [refinoFase, setRefinoFase] = useState<RefinoFase>('idle');
   const [refinoTexto, setRefinoTexto] = useState('');
+  const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null);
+  const [gerando, setGerando] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const arquivo = useRef<string>('');
@@ -48,9 +57,19 @@ function App() {
       setErro(null);
       setCopiado(false);
       setRefinoFase('idle');
+      setConfirmacao(null);
+      setGerando(false);
     });
     window.aerolince.onResultadoErro((msg) => {
       setErro(msg);
+      setRefinoFase('idle');
+      setGerando(false);
+    });
+    window.aerolince.onConfirmarMascara((p) => {
+      setConfirmacao(p as unknown as Confirmacao);
+      setResultado(null);
+      setErro(null);
+      setGerando(false);
       setRefinoFase('idle');
     });
   }, []);
@@ -60,6 +79,13 @@ function App() {
     persistirEdicao(texto);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
+  }
+
+  function confirmarMascara(id: string): void {
+    if (!confirmacao || gerando) return;
+    setGerando(true);
+    setErro(null);
+    void window.aerolince.gerarComMascara(id, confirmacao.transcript);
   }
 
   async function toggleRefinoVoz() {
@@ -118,8 +144,26 @@ function App() {
 
       {erro && <div className="erro-box">{erro}</div>}
 
+      {confirmacao && !resultado && (
+        <div className="confirmar">
+          <div className="titulo">Não tive certeza do exame. Gerar como:</div>
+          {confirmacao.candidatos.map((c, k) => (
+            <button key={c.id} className={k === 0 ? 'primario' : ''} disabled={gerando} onClick={() => confirmarMascara(c.id)}>
+              {c.nome}
+            </button>
+          ))}
+          <button className="cancelar" disabled={gerando} onClick={() => setConfirmacao(null)}>
+            Nenhum destes — vou ditar de novo citando o exame
+          </button>
+          {gerando && <div className="status">… gerando o laudo</div>}
+        </div>
+      )}
+
       {resultado ? (
         <>
+          {(resultado.avisos?.length ?? 0) > 0 && (
+            <div className="aviso-box">🛡️ {resultado.avisos!.join(' · ')}</div>
+          )}
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -156,7 +200,7 @@ function App() {
           </div>
         </>
       ) : (
-        !erro && (
+        !erro && !confirmacao && (
           <div className="vazio">
             Clique no botão flutuante (ou Cmd/Ctrl+Shift+D), dite o comando e o laudo aparece aqui —
             já copiado para colar no seu RIS.

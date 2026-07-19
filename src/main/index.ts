@@ -20,7 +20,9 @@ import { saveReport, saveSidecar } from '../core/output/output.js';
 import { listarHistorico, lerLaudo, salvarFinalEditado } from './historico.js';
 import {
   ResultadoLaudo,
+  ResultadoPipeline,
   desfazer,
+  gerarComMascara,
   getOutputDir,
   initPipeline,
   processarAudio,
@@ -237,15 +239,23 @@ async function entregar(r: ResultadoLaudo): Promise<void> {
   estado('ok');
 }
 
-async function processar(fn: () => Promise<ResultadoLaudo>): Promise<{ ok: boolean; erro?: string }> {
+async function processar(fn: () => Promise<ResultadoPipeline>): Promise<{ ok: boolean; erro?: string }> {
   estado('processando');
   try {
-    await entregar(await fn());
+    const r = await fn();
+    if (r.tipo === 'confirmar-mascara') {
+      resultWin?.webContents.send('confirmar-mascara', r);
+      resultWin?.showInactive();
+      estado('ok');
+      return { ok: true };
+    }
+    await entregar(r);
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     estado('erro', msg);
     resultWin?.webContents.send('resultado-erro', msg);
+    resultWin?.showInactive();
     return { ok: false, erro: msg };
   }
 }
@@ -275,6 +285,9 @@ function registrarIpc(): void {
   ipcMain.handle('processar-texto', (_e, texto: string) => processar(() => processarTexto(texto)));
   ipcMain.handle('refinar-audio', (_e, ab: ArrayBuffer) => processar(() => refinarAudio(Buffer.from(ab))));
   ipcMain.handle('refinar-texto', (_e, texto: string) => processar(() => refinarTexto(texto)));
+  ipcMain.handle('gerar-com-mascara', (_e, maskId: string, transcript: string) =>
+    processar(() => gerarComMascara(maskId, transcript)),
+  );
   ipcMain.handle('desfazer', () => {
     const r = desfazer();
     if (!r) return { ok: false };

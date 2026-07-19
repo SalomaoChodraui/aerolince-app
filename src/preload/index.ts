@@ -8,6 +8,8 @@ const api = {
   processarTexto: (texto: string): Promise<Resp> => ipcRenderer.invoke('processar-texto', texto),
   refinarAudio: (buf: ArrayBuffer): Promise<Resp> => ipcRenderer.invoke('refinar-audio', buf),
   refinarTexto: (texto: string): Promise<Resp> => ipcRenderer.invoke('refinar-texto', texto),
+  gerarComMascara: (maskId: string, transcript: string): Promise<Resp> =>
+    ipcRenderer.invoke('gerar-com-mascara', maskId, transcript),
   desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),
   copiar: (texto: string): Promise<void> => ipcRenderer.invoke('copiar', texto),
   gravando: (on: boolean): void => ipcRenderer.send('gravando', on),
@@ -47,6 +49,8 @@ const api = {
     void ipcRenderer.on('resultado', (_e, p) => cb(p)),
   onResultadoErro: (cb: (msg: string) => void): void =>
     void ipcRenderer.on('resultado-erro', (_e, p) => cb(p)),
+  onConfirmarMascara: (cb: (p: Record<string, unknown>) => void): void =>
+    void ipcRenderer.on('confirmar-mascara', (_e, p) => cb(p)),
   onConfigMudou: (cb: (c: unknown) => void): void =>
     void ipcRenderer.on('config-mudou', (_e, c) => cb(c)),
 };
