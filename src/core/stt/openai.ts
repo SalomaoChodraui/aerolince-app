@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 
 export interface STTResult {
   text: string;
@@ -8,6 +8,7 @@ export interface STTResult {
 
 export interface STTProvider {
   transcribe(audioPath: string): Promise<STTResult>;
+  transcribeBuffer(data: Buffer, filename?: string): Promise<STTResult>;
 }
 
 /**
@@ -25,14 +26,23 @@ export class OpenAISTT implements STTProvider {
     this.client = new OpenAI(apiKey ? { apiKey } : undefined);
   }
 
-  async transcribe(audioPath: string): Promise<STTResult> {
+  private async create(file: ReturnType<typeof createReadStream> | Awaited<ReturnType<typeof toFile>>): Promise<STTResult> {
     const t0 = performance.now();
     const result = await this.client.audio.transcriptions.create({
-      file: createReadStream(audioPath),
+      file,
       model: this.model,
       language: 'pt',
       prompt: `Ditado de laudo de tomografia computadorizada em português. Termos: ${this.glossario.join(', ')}.`,
     });
     return { text: result.text.trim(), durationMs: performance.now() - t0 };
+  }
+
+  async transcribe(audioPath: string): Promise<STTResult> {
+    return this.create(createReadStream(audioPath));
+  }
+
+  /** Do buffer direto à API — o áudio do ditado nunca toca o disco (PRIV-01). */
+  async transcribeBuffer(data: Buffer, filename = 'audio.webm'): Promise<STTResult> {
+    return this.create(await toFile(data, filename));
   }
 }

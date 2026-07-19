@@ -4,9 +4,6 @@
  * Gates da Fase A: sanitização do ditado antes de qualquer LLM e política de
  * confiança (alta gera; media pede confirmação; baixa nunca gera).
  */
-import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
 import { Config, loadConfig } from '../core/config/schema.js';
 import { loadProfile, loadRegras } from '../core/contexto.js';
@@ -16,6 +13,7 @@ import { LLMClient, LLMUsage, estimateCostUSD } from '../core/llm/anthropic.js';
 import { getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
+import { validarAudio } from '../core/stt/audio-guard.js';
 import { OpenAISTT } from '../core/stt/openai.js';
 
 export interface ResultadoLaudo {
@@ -76,10 +74,9 @@ export function processarTexto(transcript: string): Promise<ResultadoPipeline> {
 export async function processarAudio(audio: Buffer): Promise<ResultadoPipeline> {
   exigirChave('OPENAI_API_KEY');
   const config = getConfig();
-  const tmp = join(tmpdir(), `aerolince-${Date.now()}.webm`);
-  writeFileSync(tmp, audio);
+  validarAudio(audio.byteLength);
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
-  const r = await stt.transcribe(tmp);
+  const r = await stt.transcribeBuffer(audio, 'ditado.webm');
   if (!r.text) throw new Error('não entendi o áudio — tente de novo');
   return processarTranscript(r.text, r.durationMs);
 }
@@ -242,10 +239,9 @@ export function refinarTexto(command: string): Promise<ResultadoLaudo> {
 export async function refinarAudio(audio: Buffer): Promise<ResultadoLaudo> {
   exigirChave('OPENAI_API_KEY');
   const config = getConfig();
-  const tmp = join(tmpdir(), `aerolince-refino-${Date.now()}.webm`);
-  writeFileSync(tmp, audio);
+  validarAudio(audio.byteLength);
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
-  const r = await stt.transcribe(tmp);
+  const r = await stt.transcribeBuffer(audio, 'refino.webm');
   if (!r.text) throw new Error('não entendi o áudio do refino — tente de novo');
   return refinarTranscript(r.text, r.durationMs);
 }
