@@ -13,8 +13,10 @@ Plano original e decisões em `docs/decisoes.md`.
 - `Modelos de Laudos/` (pasta irmã, fora do repo) contém **laudos reais de pacientes** — com
   nome no conteúdo E no nome do arquivo. Esses dados NUNCA entram no git, em logs commitados
   ou em prompts para APIs externas.
-- Todo texto só pode ir para APIs (Anthropic/OpenAI) **depois** de passar pelo
-  `src/core/anonymizer` localmente. Sem exceção.
+- Todo **texto** só pode ir para APIs **depois** de passar pelo `src/core/anonymizer` localmente
+  (no app/CLI: `sanitizeComando` no pipeline). O **áudio** do ditado vai à OpenAI para transcrição sem
+  anonimização prévia (limitação declarada no onboarding e em `docs/privacidade.md`) — nunca é gravado
+  em disco, e o transcript resultante é sanitizado antes do LLM.
 - Nomes de arquivos derivados de laudos reais não podem conter nome de paciente
   (usar data + exame + hash).
 - Chaves de API só em `.env` (gitignorado) ou variáveis de ambiente. Nunca hardcoded.

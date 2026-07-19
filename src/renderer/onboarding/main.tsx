@@ -37,6 +37,18 @@ const PASSOS: Passo[] = [
     ),
   },
   {
+    icone: <span className="passo-emoji">🔒</span>,
+    titulo: 'Voz na nuvem, laudo no seu computador',
+    corpo: (
+      <>
+        Ao ditar, o <b>áudio</b> vai para a OpenAI virar texto, e o texto — após uma limpeza local de nomes e
+        documentos — vai para a Anthropic (Claude) montar o laudo. Por isso, <b>dite achados, não dados do
+        paciente</b>: nada de nome, prontuário ou data de nascimento. Máscaras e laudos ficam apenas no seu
+        computador.
+      </>
+    ),
+  },
+  {
     icone: <span className="passo-emoji">📋</span>,
     titulo: 'Revise e cole',
     corpo: (
