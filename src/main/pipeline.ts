@@ -118,8 +118,29 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
   return gerarLaudo(llm, config, { mask: sel.mask, confianca: sel.confianca, durationMs: sel.durationMs, usage: sel.usage }, san.texto, sttMs, san.avisos);
 }
 
-/** Geração com máscara escolhida explicitamente pelo médico (gate de confiança). */
-export async function gerarComMascara(maskId: string, transcript: string): Promise<ResultadoLaudo> {
+/**
+ * Combina listas de avisos preservando a ordem e removendo duplicatas exatas.
+ * Usada para não perder os avisos da sanitização original (feita antes da
+ * confirmação de máscara) quando `gerarComMascara` roda uma segunda passagem
+ * sobre um transcript já redigido (que não tem mais o que encontrar).
+ */
+export function dedupAvisos(...listas: string[][]): string[] {
+  return [...new Set(listas.flat())];
+}
+
+/**
+ * Geração com máscara escolhida explicitamente pelo médico (gate de confiança).
+ * `avisosPrevios` carrega os avisos da sanitização original (calculada em
+ * `processarTranscript` antes do pedido de confirmação) — o transcript aqui já
+ * chega redigido, então uma segunda `sanitizeComando` não reencontra nome/CPF/
+ * ID/CRM/telefone (já viraram `[NOME]` etc.); sem repassar `avisosPrevios` o
+ * médico nunca saberia que um identificador foi removido.
+ */
+export async function gerarComMascara(
+  maskId: string,
+  transcript: string,
+  avisosPrevios: string[] = [],
+): Promise<ResultadoLaudo> {
   exigirChave('ANTHROPIC_API_KEY');
   const config = getConfig();
   const masks = loadLibrary(config.masksDir);
@@ -127,7 +148,8 @@ export async function gerarComMascara(maskId: string, transcript: string): Promi
   if (!mask) throw new Error(`máscara não encontrada: ${maskId}`);
   const san = sanitizeComando(transcript);
   const llm = new LLMClient();
-  return gerarLaudo(llm, config, { mask, confianca: 'manual', durationMs: 0, usage: null }, san.texto, 0, san.avisos);
+  const avisos = dedupAvisos(avisosPrevios, san.avisos);
+  return gerarLaudo(llm, config, { mask, confianca: 'manual', durationMs: 0, usage: null }, san.texto, 0, avisos);
 }
 
 async function gerarLaudo(

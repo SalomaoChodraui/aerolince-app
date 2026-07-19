@@ -285,8 +285,8 @@ function registrarIpc(): void {
   ipcMain.handle('processar-texto', (_e, texto: string) => processar(() => processarTexto(texto)));
   ipcMain.handle('refinar-audio', (_e, ab: ArrayBuffer) => processar(() => refinarAudio(Buffer.from(ab))));
   ipcMain.handle('refinar-texto', (_e, texto: string) => processar(() => refinarTexto(texto)));
-  ipcMain.handle('gerar-com-mascara', (_e, maskId: string, transcript: string) =>
-    processar(() => gerarComMascara(maskId, transcript)),
+  ipcMain.handle('gerar-com-mascara', (_e, maskId: string, transcript: string, avisos: string[]) =>
+    processar(() => gerarComMascara(maskId, transcript, avisos)),
   );
   ipcMain.handle('desfazer', () => {
     const r = desfazer();

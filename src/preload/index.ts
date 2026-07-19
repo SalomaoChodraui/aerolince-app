@@ -8,8 +8,8 @@ const api = {
   processarTexto: (texto: string): Promise<Resp> => ipcRenderer.invoke('processar-texto', texto),
   refinarAudio: (buf: ArrayBuffer): Promise<Resp> => ipcRenderer.invoke('refinar-audio', buf),
   refinarTexto: (texto: string): Promise<Resp> => ipcRenderer.invoke('refinar-texto', texto),
-  gerarComMascara: (maskId: string, transcript: string): Promise<Resp> =>
-    ipcRenderer.invoke('gerar-com-mascara', maskId, transcript),
+  gerarComMascara: (maskId: string, transcript: string, avisos: string[]): Promise<Resp> =>
+    ipcRenderer.invoke('gerar-com-mascara', maskId, transcript, avisos),
   desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),
   copiar: (texto: string): Promise<void> => ipcRenderer.invoke('copiar', texto),
   gravando: (on: boolean): void => ipcRenderer.send('gravando', on),

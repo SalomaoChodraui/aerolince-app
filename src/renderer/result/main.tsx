@@ -85,7 +85,7 @@ function App() {
     if (!confirmacao || gerando) return;
     setGerando(true);
     setErro(null);
-    void window.aerolince.gerarComMascara(id, confirmacao.transcript);
+    void window.aerolince.gerarComMascara(id, confirmacao.transcript, confirmacao.avisos ?? []);
   }
 
   async function toggleRefinoVoz() {
@@ -147,6 +147,9 @@ function App() {
       {confirmacao && !resultado && (
         <div className="confirmar">
           <div className="titulo">Não tive certeza do exame. Gerar como:</div>
+          {(confirmacao.avisos?.length ?? 0) > 0 && (
+            <div className="aviso-box">🛡️ {confirmacao.avisos!.join(' · ')}</div>
+          )}
           {confirmacao.candidatos.map((c, k) => (
             <button key={c.id} className={k === 0 ? 'primario' : ''} disabled={gerando} onClick={() => confirmarMascara(c.id)}>
               {c.nome}
