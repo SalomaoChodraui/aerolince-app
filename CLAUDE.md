@@ -15,11 +15,13 @@ Plano original e decisões em `docs/decisoes.md`.
   ou em prompts para APIs externas.
 - Todo **texto** só pode ir para APIs **depois** de passar pelo `src/core/anonymizer` localmente
   (no app/CLI: `sanitizeComando` no pipeline). O **áudio** do ditado vai à OpenAI para transcrição sem
-  anonimização prévia (limitação declarada no onboarding e em `docs/privacidade.md`) — nunca é gravado
-  em disco, e o transcript resultante é sanitizado antes do LLM.
+  anonimização prévia (limitação declarada no onboarding e em `docs/privacidade.md`) — no app nunca é
+  gravado em disco (a CLI de desenvolvimento grava `.wav` local, fora do git), e o transcript resultante
+  é sanitizado antes do LLM.
 - Nomes de arquivos derivados de laudos reais não podem conter nome de paciente
   (usar data + exame + hash).
-- Chaves de API só em `.env` (gitignorado) ou variáveis de ambiente. Nunca hardcoded.
+- Chaves de API: no app, no cofre local (`secrets.enc.json` via safeStorage, gitignorado); na CLI/dev,
+  em `.env` (gitignorado) ou variáveis de ambiente. Nunca hardcoded.
 - O produto gera **rascunho**; o médico sempre revisa e assina. Nunca apresentar o output
   como laudo final autônomo.
 

@@ -43,8 +43,8 @@ const PASSOS: Passo[] = [
       <>
         Ao ditar, o <b>áudio</b> vai para a OpenAI virar texto, e o texto — após uma limpeza local de nomes e
         documentos — vai para a Anthropic (Claude) montar o laudo. Por isso, <b>dite achados, não dados do
-        paciente</b>: nada de nome, prontuário ou data de nascimento. Máscaras e laudos ficam apenas no seu
-        computador.
+        paciente</b>: nada de nome, prontuário ou data de nascimento. Máscaras e laudos ficam guardados apenas
+        no seu computador.
       </>
     ),
   },

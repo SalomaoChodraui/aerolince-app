@@ -184,6 +184,7 @@ async function runPipeline(opts: {
 
   // Saída
   console.log('\n' + '─'.repeat(72) + '\n' + gen.report + '\n' + '─'.repeat(72));
+  if (gen.avisos.length > 0) console.warn(`⚠️  ${gen.avisos.join(' | ')}`);
   console.log(
     `Blocos alterados: ${gen.diff.changed.join(', ') || 'nenhum'} | preservados: ${gen.diff.kept.length}`,
   );
@@ -353,6 +354,8 @@ async function novoCaso() {
   process.stdout.write('Transcrevendo… ');
   const r = await stt.transcribe(audioPath);
   console.log(`${fmt(r.durationMs)}\n> "${r.text}"`);
+  const san = sanitizeComando(r.text);
+  if (san.avisos.length > 0) console.warn(`⚠️  ${san.avisos.join(' | ')}`);
 
   console.log('\nMáscaras:');
   masks.forEach((m, i) => console.log(`  ${i + 1}. ${m.id} — ${m.nome}`));
@@ -372,12 +375,12 @@ async function novoCaso() {
 
   writeFileSync(
     join(goldenDir, `${id}.json`),
-    JSON.stringify({ id, audio: `${id}.wav`, transcript_gravado: r.text, mask_esperada: esperada }, null, 2),
+    JSON.stringify({ id, audio: `${id}.wav`, transcript_gravado: san.texto, mask_esperada: esperada }, null, 2),
     'utf8',
   );
 
   const llm = new LLMClient();
-  const sel = await selectMask(llm, config.llm.selectionModel, r.text, masks);
+  const sel = await selectMask(llm, config.llm.selectionModel, san.texto, masks);
   const got = sel.mask?.id ?? 'nenhuma';
   console.log(
     `${got === esperada ? '✓ seleção correta' : `✗ seleção divergente (obtido: ${got})`} (confiança: ${sel.confianca})`,
@@ -411,6 +414,9 @@ async function runEval() {
       console.log(`? ${c.id}: caso sem "comando" nem "audio" — pulado`);
       continue;
     }
+    const sanCaso = sanitizeComando(comando);
+    if (sanCaso.avisos.length > 0) console.warn(`⚠️  ${c.id}: ${sanCaso.avisos.join(' | ')}`);
+    comando = sanCaso.texto;
     try {
       const sel = await selectMask(llm, config.llm.selectionModel, comando, masks);
       const got = sel.mask?.id ?? 'nenhuma';

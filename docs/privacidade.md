@@ -5,9 +5,9 @@
    `src/core/anonymizer` no próprio computador antes de qualquer chamada de geração (Anthropic). O que sobe
    é texto sanitizado ([NOME], [CPF], [DATA], [ID], [TEL], [CRM]). No app, é o `sanitizeComando` no pipeline.
 2. **O áudio do ditado vai à OpenAI para transcrição.** Anonimizar áudio localmente não é possível nesta
-   fase; o fluxo é declarado no onboarding. O áudio não é gravado em disco (segue da memória direto para a
-   API) e não deve conter dados do paciente — a melhor proteção é não ditá-los. STT local é alternativa
-   avaliada para a Fase 2.
+   fase; o fluxo é declarado no onboarding. No app, o áudio não é gravado em disco (segue da memória direto
+   para a API; a CLI de desenvolvimento grava `.wav` local, fora do git) e não deve conter dados do
+   paciente — a melhor proteção é não ditá-los. STT local é alternativa avaliada para a Fase 2.
 3. **Limitações conhecidas da sanitização (regex):** nomes ditados sem gatilho ("paciente", "doutor") podem
    escapar; datas NÃO são removidas do comando (são conteúdo clínico — comparativos) e geram apenas aviso
    na interface.
