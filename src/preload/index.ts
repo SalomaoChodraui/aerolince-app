@@ -11,6 +11,15 @@ const api = {
   refinarTexto: (texto: string): Promise<Resp> => ipcRenderer.invoke('refinar-texto', texto),
   gerarComMascara: (maskId: string, transcript: string, avisos: string[]): Promise<Resp> =>
     ipcRenderer.invoke('gerar-com-mascara', maskId, transcript, avisos),
+
+  // Ditado segmentado (pedal/VAD → segmentos → pipeline)
+  sessaoIniciar: (): Promise<{ ok: boolean; semCofre?: boolean; erro?: string }> =>
+    ipcRenderer.invoke('sessao-iniciar'),
+  sessaoSegmento: (pcm: ArrayBuffer, durationMs: number): Promise<Resp> =>
+    ipcRenderer.invoke('sessao-segmento', pcm, durationMs),
+  sessaoEncerrar: (): Promise<Resp> => ipcRenderer.invoke('sessao-encerrar'),
+  sessaoCancelar: (): Promise<Resp> => ipcRenderer.invoke('sessao-cancelar'),
+
   desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),
   copiar: (texto: string): Promise<void> => ipcRenderer.invoke('copiar', texto),
   gravando: (on: boolean): void => ipcRenderer.send('gravando', on),
