@@ -324,7 +324,11 @@ function App() {
               max={5}
               step={0.1}
               value={cfg.stt.pausaMs / 1000}
-              onChange={(e) => patchStt({ pausaMs: Math.round(Number(e.target.value) * 1000) })}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (e.target.value === '' || !Number.isFinite(v)) return; // digitação em andamento: mantém o valor salvo, não tenta gravar
+                void patchStt({ pausaMs: Math.min(5000, Math.max(400, Math.round(v * 1000))) }); // clamp: digitação fora do range nunca falha no zod
+              }}
             />
           </div>
           <div className="desc" style={{ padding: '4px 14px' }}>
