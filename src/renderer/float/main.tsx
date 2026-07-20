@@ -18,6 +18,15 @@ function fmt(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** Rótulo curto do aviso sob o balão; o title do botão carrega a mensagem completa. */
+function rotuloDeErro(msg?: string): string {
+  const m = (msg ?? '').toLowerCase();
+  if (m.includes('áudio') || m.includes('audio') || m.includes('entendi')) return 'sem áudio';
+  if (m.includes('microfone')) return 'sem microfone';
+  if (m.includes('chave') || m.includes('api key') || m.includes('_key')) return 'sem chave';
+  return 'erro';
+}
+
 function Icone({ fase }: { fase: Fase }) {
   // Sessão ativa e gravando clássico mostram o mesmo "parar" (clique encerra); o CSS diferencia.
   if (fase === 'gravando' || fase === 'ouvindo' || fase === 'falando') return <span className="parar" />;
@@ -30,6 +39,7 @@ function App() {
   const [fase, setFase] = useState<Fase>('idle');
   const [segundos, setSegundos] = useState(0);
   const [aviso, setAviso] = useState('');
+  const msgErro = useRef(''); // mensagem completa do erro, para o title do botão
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const cancelado = useRef(false);
@@ -120,14 +130,16 @@ function App() {
       void window.aerolince.sessaoCancelar(); // limpa a sessão do main se ela chegou a abrir
       // getUserMedia negado/sem device → orienta; demais erros caem no aviso genérico.
       const nome = e instanceof DOMException ? e.name : '';
-      setAviso(nome === 'NotAllowedError' || nome === 'NotFoundError' ? 'microfone' : 'erro');
+      msgErro.current = e instanceof Error ? e.message : '';
+      setAviso(nome === 'NotAllowedError' || nome === 'NotFoundError' ? 'sem microfone' : 'erro');
       setFase('erro');
       setTimeout(() => {
         if (faseRef.current === 'erro') {
           setFase('idle');
           setAviso('');
+          msgErro.current = '';
         }
-      }, 3500);
+      }, 5000);
     }
   }
 
@@ -228,6 +240,7 @@ function App() {
       setFase(nova as Fase);
       if (nova === 'ok') {
         setAviso('');
+        msgErro.current = '';
         // Guardado por fase: uma sessão nova iniciada dentro de 1,8 s NÃO pode ser revertida a
         // 'idle' por este timeout velho — senão o botão mentiria 'idle' com o microfone vivo.
         setTimeout(() => {
@@ -235,15 +248,18 @@ function App() {
         }, 1800);
       } else if (nova === 'erro') {
         // Nunca ficar travado: mostra o motivo e volta ao normal (guardado pela fase que reverte).
-        setAviso(msg?.includes('áudio') || msg?.includes('entendi') ? 'sem áudio' : 'erro');
+        msgErro.current = msg ?? '';
+        setAviso(rotuloDeErro(msg));
         setTimeout(() => {
           if (faseRef.current === 'erro') {
             setFase('idle');
             setAviso('');
+            msgErro.current = '';
           }
-        }, 3500);
+        }, 5000);
       } else {
         setAviso('');
+        msgErro.current = '';
       }
     });
   }, []);
@@ -258,9 +274,11 @@ function App() {
         : fase === 'gravando'
           ? 'Gravando — clique para parar (Esc cancela). Arraste para mover.'
           : fase === 'erro'
-            ? aviso === 'microfone'
+            ? aviso === 'sem microfone'
               ? 'Permita o acesso ao microfone para ditar.'
-              : 'Não consegui gerar o laudo — clique para tentar de novo'
+              : msgErro.current
+                ? `${msgErro.current} — clique para tentar de novo`
+                : 'Não consegui gerar o laudo — clique para tentar de novo'
             : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
 
   return (
