@@ -24,6 +24,9 @@ const api = {
   copiar: (texto: string): Promise<void> => ipcRenderer.invoke('copiar', texto),
   gravando: (on: boolean): void => ipcRenderer.send('gravando', on),
   balaoMover: (x: number, y: number): void => ipcRenderer.send('balao-mover', x, y),
+  // Scroll no balão: efeito imediato da opacidade (sem tocar disco a cada tick;
+  // a persistência vai por configSet, debounced, no próprio renderer).
+  balaoOpacidade: (v: number): void => ipcRenderer.send('balao-opacidade', v),
 
   // Configuração / aparência
   configGet: (): Promise<unknown> => ipcRenderer.invoke('config-get'),

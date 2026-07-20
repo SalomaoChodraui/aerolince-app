@@ -417,6 +417,13 @@ function registrarIpc(): void {
   });
   // Arraste manual do botão flutuante (clique = ditar, arraste = mover)
   ipcMain.on('balao-mover', (_e, x: number, y: number) => floatWin?.setPosition(Math.round(x), Math.round(y)));
+  // Scroll no balão (clique/arraste continuam por outro canal): aplica a opacidade
+  // JÁ calculada e clampeada pelo renderer — efeito imediato, sem tocar disco.
+  // Fronteira IPC: nunca confiar no renderer, mesmo para um ajuste cosmético.
+  ipcMain.on('balao-opacidade', (_e, v: unknown) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return;
+    floatWin?.setOpacity(Math.min(1, Math.max(0.05, v)));
+  });
 
   // Chaves de API (cofre seguro)
   ipcMain.handle('secrets-status', () => statusChaves(appRoot));

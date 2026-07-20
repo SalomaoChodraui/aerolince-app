@@ -168,7 +168,7 @@ function App() {
             <input
               className="ctrl"
               type="range"
-              min={0.35}
+              min={0.05}
               max={1}
               step={0.05}
               value={cfg.ui.opacidadeBalao}

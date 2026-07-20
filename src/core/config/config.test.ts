@@ -97,6 +97,15 @@ describe('saveConfig atômico', () => {
     expect(() => saveConfig(root, { stt: { pausaMs: 100 } })).toThrow();
   });
 
+  it('opacidadeBalao 0.05 (mínimo) é aceito', () => {
+    saveConfig(root, { ui: { opacidadeBalao: 0.05 } });
+    expect(loadConfig(root).ui.opacidadeBalao).toBe(0.05);
+  });
+
+  it('opacidadeBalao 0.04 (abaixo do mínimo) é rejeitado', () => {
+    expect(() => saveConfig(root, { ui: { opacidadeBalao: 0.04 } })).toThrow();
+  });
+
   it('merge raso de stt preserva campos não enviados', () => {
     saveConfig(root, { stt: { glossario: ['esteatose'] } });
     saveConfig(root, { stt: { pausaMs: 2000 } });

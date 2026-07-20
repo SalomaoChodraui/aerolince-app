@@ -55,6 +55,12 @@ function App() {
   // Geração da sessão: cresce a cada início/encerramento/cancelamento. Evita microfone
   // aberto se o usuário encerrar/cancelar enquanto o VAD ainda carrega o modelo.
   const geracao = useRef(0);
+  // Scroll no logo ajusta a opacidade do balão. Valor local espelha a config para
+  // permitir o ajuste relativo (±0.05) sem round-trip a cada tick de scroll.
+  const botaoRef = useRef<HTMLButtonElement | null>(null);
+  const opacidadeAtual = useRef(1); // default do schema; sobrescrito pelo configGet no mount
+  const opacidadeCarregada = useRef(false); // trava o configGet tardio de sobrescrever um scroll já feito
+  const opacidadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   faseRef.current = fase;
 
   // Fluxo clássico (config.stt.captura === 'classica'): MediaRecorder → webm → processarAudio.
@@ -225,6 +231,40 @@ function App() {
     };
   }, []);
 
+  // Opacidade atual para o ajuste relativo do scroll (o balão não lê a config no
+  // boot hoje — só ao ditar). Guardado por opacidadeCarregada: se o usuário já
+  // scrollou antes desta promise resolver, não pisa no valor mais novo.
+  useEffect(() => {
+    void (async () => {
+      const config = (await window.aerolince.configGet()) as RendererConfig;
+      if (!opacidadeCarregada.current) opacidadeAtual.current = config.ui.opacidadeBalao;
+    })();
+  }, []);
+
+  // Scroll no logo ajusta a transparência (ideia do usuário). Listener nativo com
+  // passive:false (preventDefault exige) — evento distinto de mousedown/move/up,
+  // não interfere no clique/arraste. Efeito imediato via IPC dedicado (sem tocar
+  // disco a cada tick); persistência por configSet, com debounce de ~400ms.
+  useEffect(() => {
+    const el = botaoRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      opacidadeCarregada.current = true;
+      const delta = e.deltaY < 0 ? 0.05 : -0.05; // scroll para cima = mais opaco
+      // Arredonda para 2 casas a cada tick — sem isso, ±0.05 repetido em float acumula drift.
+      const v = Math.min(1, Math.max(0.05, Math.round((opacidadeAtual.current + delta) * 100) / 100));
+      opacidadeAtual.current = v;
+      window.aerolince.balaoOpacidade(v);
+      if (opacidadeTimer.current) clearTimeout(opacidadeTimer.current);
+      opacidadeTimer.current = setTimeout(() => {
+        void window.aerolince.configSet({ ui: { opacidadeBalao: v } });
+      }, 400);
+    }
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   useEffect(() => {
     window.aerolince.onAtalhoToggle(toggle);
     window.aerolince.onAtalhoCancelar(() => {
@@ -279,11 +319,11 @@ function App() {
               : msgErro.current
                 ? `${msgErro.current} — clique para tentar de novo`
                 : 'Não consegui gerar o laudo — clique para tentar de novo'
-            : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
+            : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover. Scroll ajusta a transparência.';
 
   return (
     <>
-      <button className={`botao ${fase}`} onMouseDown={onMouseDown} title={titulo}>
+      <button ref={botaoRef} className={`botao ${fase}`} onMouseDown={onMouseDown} title={titulo}>
         <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}

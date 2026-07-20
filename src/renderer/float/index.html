@@ -23,7 +23,6 @@
         width: 64px;
         height: 64px;
         border-radius: 50%;
-        border: 1.5px solid var(--linha);
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -42,14 +41,12 @@
       }
       .gravando {
         background: var(--oxido);
-        border-color: var(--oxido);
         color: var(--branco);
         animation: pulsa 1.1s infinite;
       }
       /* Sessão aberta, aguardando fala — respiração lenta (calma, mas viva). */
       .ouvindo {
         background: var(--oxido);
-        border-color: var(--oxido);
         color: var(--branco);
         box-shadow: 0 0 0 2px var(--oxido-suave);
         animation: respirar 2.4s ease-in-out infinite;
@@ -57,14 +54,12 @@
       /* Registrando a fala — mesmo peso visual do gravando (pulso). */
       .falando {
         background: var(--oxido);
-        border-color: var(--oxido);
         color: var(--branco);
         box-shadow: 0 0 0 3px var(--oxido);
         animation: pulsa 1.1s infinite;
       }
       .processando {
         background: var(--preto);
-        border-color: var(--preto);
         color: var(--branco);
       }
       .processando svg {
@@ -72,13 +67,11 @@
       }
       .ok {
         background: var(--preto);
-        border-color: var(--preto);
         color: var(--branco);
         font-size: 26px;
       }
       .erro {
         background: var(--branco);
-        border: 2px solid var(--oxido);
         color: var(--oxido);
         font-size: 26px;
         font-weight: 700;

@@ -22,7 +22,7 @@ export const ConfigSchema = z.object({
     .object({
       tema: z.enum(['auto', 'claro', 'escuro']).default('auto'),
       liquidGlass: z.boolean().default(true),
-      opacidadeBalao: z.number().min(0.35).max(1).default(1),
+      opacidadeBalao: z.number().min(0.05).max(1).default(1),
       atalho: z.string().default('CommandOrControl+Shift+D'),
       balaoPos: z.object({ x: z.number(), y: z.number() }).nullable().default(null),
     })
