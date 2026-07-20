@@ -40,6 +40,31 @@ function App() {
     setCopiado(false);
   }
 
+  // Recarrega a lista após uma deleção. Mantém a seleção se ela sobreviveu;
+  // senão abre o primeiro item (ou esvazia o detalhe se não restou nenhum).
+  async function recarregar(anterior: Item | null) {
+    const lista = (await api.historicoListar()) as Item[];
+    setItens(lista);
+    if (anterior && lista.some((i) => i.arquivo === anterior.arquivo)) return;
+    if (lista[0]) void abrir(lista[0]);
+    else {
+      setSel(null);
+      setTexto('');
+    }
+  }
+
+  // A confirmação (irreversível) acontece no processo main; aqui só reagimos ao ok.
+  async function apagar(item: Item, e: React.MouseEvent) {
+    e.stopPropagation(); // não abrir o laudo ao clicar na lixeira
+    const r = await api.historicoApagar(item.arquivo);
+    if (r.ok) await recarregar(sel);
+  }
+
+  async function apagarTodos() {
+    const r = await api.historicoApagarTodos();
+    if (r.ok) await recarregar(null);
+  }
+
   async function copiar() {
     await api.copiar(texto);
     setCopiado(true);
@@ -62,6 +87,11 @@ function App() {
           onChange={(e) => setBusca(e.target.value)}
           style={{ marginLeft: 'auto', width: 200, WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         />
+        {itens.length > 0 && (
+          <button className="fantasma hist-apagar-todos" onClick={apagarTodos} title="Apagar todos os laudos">
+            Apagar todos
+          </button>
+        )}
       </div>
       <div className="hist-split">
         <ul className="hist-lista">
@@ -77,6 +107,14 @@ function App() {
               </div>
               <div className="hist-prev">{i.transcript || i.preview}</div>
               {i.editado && <span className="hist-tag">editado</span>}
+              <button
+                className="hist-apagar"
+                title="Apagar este laudo"
+                aria-label="Apagar este laudo"
+                onClick={(e) => apagar(i, e)}
+              >
+                🗑
+              </button>
             </li>
           ))}
           {filtrados.length === 0 && <li className="vazio">Nenhum laudo ainda.</li>}

@@ -106,3 +106,26 @@ describe('saveConfig atômico', () => {
     expect(c.stt.captura).toBe('segmentada');
   });
 });
+
+describe('retenção do histórico (config)', () => {
+  it('config antiga sem o bloco historico ganha default retencaoDias 0', () => {
+    writeFileSync(
+      join(root, 'laudo.config.json'),
+      JSON.stringify({ schemaVersion: 1, ui: { tema: 'escuro' } }),
+      'utf8',
+    );
+    expect(loadConfig(root).historico.retencaoDias).toBe(0);
+  });
+
+  it('merge raso preserva historico ao salvar outra seção', () => {
+    saveConfig(root, { historico: { retencaoDias: 30 } });
+    saveConfig(root, { ui: { tema: 'escuro' } });
+    const c = loadConfig(root);
+    expect(c.historico.retencaoDias).toBe(30);
+    expect(c.ui.tema).toBe('escuro');
+  });
+
+  it('retencaoDias 5000 (acima do máximo de 3650) é rejeitado', () => {
+    expect(() => saveConfig(root, { historico: { retencaoDias: 5000 } })).toThrow();
+  });
+});

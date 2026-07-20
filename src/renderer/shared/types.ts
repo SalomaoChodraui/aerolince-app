@@ -20,6 +20,10 @@ export interface SttConfig {
   pausaMs: number;
 }
 
+export interface HistoricoConfig {
+  retencaoDias: number;
+}
+
 export interface RendererConfig {
   masksDir: string;
   profilesDir: string;
@@ -29,4 +33,5 @@ export interface RendererConfig {
   ui: UIConfig;
   macros: Macro[];
   stt: SttConfig;
+  historico: HistoricoConfig;
 }

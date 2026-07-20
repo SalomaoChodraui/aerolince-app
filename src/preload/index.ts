@@ -40,6 +40,8 @@ const api = {
   historicoListar: (): Promise<unknown[]> => ipcRenderer.invoke('historico-listar'),
   historicoLer: (arquivo: string): Promise<string> => ipcRenderer.invoke('historico-ler', arquivo),
   historicoCopiar: (arquivo: string): Promise<void> => ipcRenderer.invoke('historico-copiar', arquivo),
+  historicoApagar: (id: string): Promise<Resp> => ipcRenderer.invoke('historico-apagar', id),
+  historicoApagarTodos: (): Promise<Resp> => ipcRenderer.invoke('historico-apagar-todos'),
   salvarFinal: (arquivo: string, texto: string): Promise<void> =>
     ipcRenderer.invoke('salvar-final', arquivo, texto),
 

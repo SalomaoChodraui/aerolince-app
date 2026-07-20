@@ -44,6 +44,11 @@ export const ConfigSchema = z.object({
     kimiModel: z.string().default('kimi-k2-0905-preview'),
     kimiBaseURL: z.string().default('https://api.moonshot.ai/anthropic'),
   }),
+  // Retenção do histórico de laudos: apaga pares .txt+.json além do prazo na
+  // limpeza do boot. 0 = manter sempre (padrão — nunca apaga por tempo).
+  historico: z
+    .object({ retencaoDias: z.number().int().min(0).max(3650).default(0) })
+    .prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -171,8 +176,8 @@ export function saveConfig(appRoot: string, patch: Record<string, unknown>): Con
   const file = join(appRoot, CONFIG_FILE);
   const atual = lerOverlayBruto(file);
   const merged: Record<string, unknown> = { ...atual, ...patch, schemaVersion: 1 };
-  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt)
-  for (const chave of ['ui', 'llm', 'stt'] as const) {
+  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt/historico)
+  for (const chave of ['ui', 'llm', 'stt', 'historico'] as const) {
     if (patch[chave]) merged[chave] = { ...((atual[chave] as object | undefined) ?? {}), ...(patch[chave] as object) };
   }
   const config = mesclar(defaultsDe(appRoot), merged); // lança se o patch for inválido — arquivo intacto

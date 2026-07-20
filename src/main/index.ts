@@ -22,7 +22,15 @@ import { saveReport, saveSidecar } from '../core/output/output.js';
 import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
 import { recuperarSpoolOrfao } from './audio/recovery.js';
 import { SessaoAudio } from './audio/sessao.js';
-import { listarHistorico, lerLaudo, salvarFinalEditado } from './historico.js';
+import {
+  apagarLaudo,
+  apagarTodosLaudos,
+  contarLaudos,
+  limparVencidos,
+  listarHistorico,
+  lerLaudo,
+  salvarFinalEditado,
+} from './historico.js';
 import {
   ResultadoLaudo,
   ResultadoPipeline,
@@ -288,6 +296,15 @@ function bootstrap(): string {
     }
   }
   carregarChaves(root);
+  // Limpeza da retenção do histórico (melhor-esforço): apaga laudos além do prazo
+  // configurado. NUNCA trava o boot; retencaoDias 0 = manter sempre (não apaga).
+  try {
+    const c = loadConfig(root);
+    const n = limparVencidos(c.outputDir, c.historico.retencaoDias, Date.now());
+    if (n > 0) console.log(`[historico] retenção: ${n} laudo(s) além de ${c.historico.retencaoDias} dias apagados`);
+  } catch (e) {
+    console.log('[historico] limpeza de retenção falhou (ignorada):', e instanceof Error ? e.message : e);
+  }
   // Recovery de ditado interrompido: oferecer/expirar o spool órfão SEM travar o
   // boot (fire-and-forget). O diálogo só resolve após interação do usuário, quando
   // as janelas e o pipeline já existem; erro na transcrição preserva o spool (≤48 h).
@@ -300,6 +317,26 @@ function bootstrap(): string {
     );
   });
   return root;
+}
+
+// Confirmação nativa de ação destrutiva (deleção de laudo é irreversível). O
+// botão destrutivo é sempre o primeiro (response 0); Cancelar é o default e o
+// cancelId, então Esc/Enter sem intenção cancela. Parenteia na janela do
+// histórico quando viva (folha modal no mac).
+async function confirmarDestrutivo(message: string, acao: string): Promise<boolean> {
+  const opts: Electron.MessageBoxOptions = {
+    type: 'warning',
+    message,
+    detail: 'Não dá para desfazer.',
+    buttons: [acao, 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+  };
+  const janela = historicoWin && !historicoWin.isDestroyed() ? historicoWin : null;
+  const { response } = janela
+    ? await dialog.showMessageBox(janela, opts)
+    : await dialog.showMessageBox(opts);
+  return response === 0;
 }
 
 // ── IPC ──────────────────────────────────────────────────────────────────────
@@ -398,6 +435,25 @@ function registrarIpc(): void {
   ipcMain.handle('salvar-final', (_e, arquivo: string, texto: string) =>
     salvarFinalEditado(getOutputDir(), arquivo, texto),
   );
+  // Apagar 1 laudo: o renderer manda só o identificador; apagarLaudo resolve o
+  // caminho dentro de outputDir (basename → sem path traversal). Confirmação
+  // nativa antes de tocar o disco.
+  ipcMain.handle('historico-apagar', async (_e, id: unknown): Promise<{ ok: boolean; erro?: string }> => {
+    if (typeof id !== 'string' || !id) return { ok: false, erro: 'Identificador inválido.' };
+    if (!(await confirmarDestrutivo('Apagar este laudo?', 'Apagar'))) return { ok: false };
+    return apagarLaudo(getOutputDir(), id)
+      ? { ok: true }
+      : { ok: false, erro: 'Laudo não encontrado.' };
+  });
+  // Apagar todos: contagem real no texto da confirmação.
+  ipcMain.handle('historico-apagar-todos', async (): Promise<{ ok: boolean; erro?: string }> => {
+    const n = contarLaudos(getOutputDir());
+    if (n === 0) return { ok: false, erro: 'Nenhum laudo para apagar.' };
+    if (!(await confirmarDestrutivo(`Apagar TODOS os laudos do histórico (${n} laudos)?`, 'Apagar todos')))
+      return { ok: false };
+    apagarTodosLaudos(getOutputDir());
+    return { ok: true };
+  });
 
   // Macros (atalhos de comando)
   ipcMain.handle('macro-rodar', (_e, comando: string) => processar(() => processarTexto(comando)));

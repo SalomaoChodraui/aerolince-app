@@ -12,6 +12,7 @@
   border-right: 1px solid var(--linha);
 }
 .hist-lista li {
+  position: relative;
   padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
@@ -19,6 +20,39 @@
 }
 .hist-lista li:hover {
   background: var(--surface-2);
+}
+/* Lixeira discreta: só aparece ao passar o mouse (ou com foco de teclado). Ocupa
+   o lugar da data no canto superior direito para não sobrepor o texto. */
+.hist-apagar {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  opacity: 0;
+  padding: 2px 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+}
+.hist-lista li:hover .hist-data {
+  opacity: 0;
+}
+.hist-lista li:hover .hist-apagar,
+.hist-apagar:focus-visible {
+  opacity: 1;
+}
+.hist-apagar:hover {
+  border-color: var(--oxido);
+}
+.hist-apagar-todos {
+  font-size: 12px;
+  padding: 5px 10px;
+  color: var(--texto-suave);
+}
+.hist-apagar-todos:hover {
+  color: var(--oxido);
+  border-color: var(--oxido);
 }
 .hist-lista li.sel {
   background: var(--oxido-suave);

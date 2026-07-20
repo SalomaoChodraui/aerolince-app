@@ -57,6 +57,11 @@ function App() {
     setCfg(c);
     flashSalvo();
   }
+  async function patchHistorico(patch: Partial<RendererConfig['historico']>) {
+    const c = (await api.configSet({ historico: patch })) as RendererConfig;
+    setCfg(c);
+    flashSalvo();
+  }
   function flashSalvo() {
     setSalvo(true);
     setTimeout(() => setSalvo(false), 1200);
@@ -333,6 +338,29 @@ function App() {
           </div>
           <div className="desc" style={{ padding: '4px 14px' }}>
             Na captura segmentada, só os trechos com fala são enviados para transcrição.
+          </div>
+        </div>
+
+        <div className="secao">
+          <h2>Histórico</h2>
+          <div className="linha">
+            <div>
+              <div className="rot">Manter laudos por (dias — 0 = sempre)</div>
+              <div className="desc">Ao abrir o app, laudos mais antigos que isso são apagados. 0 mantém tudo.</div>
+            </div>
+            <input
+              className="ctrl"
+              type="number"
+              min={0}
+              max={3650}
+              step={1}
+              value={cfg.historico.retencaoDias}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (e.target.value === '' || !Number.isFinite(v)) return; // digitação em andamento: mantém o valor salvo, não tenta gravar
+                void patchHistorico({ retencaoDias: Math.min(3650, Math.max(0, Math.round(v))) }); // clamp: digitação fora do range nunca falha no zod
+              }}
+            />
           </div>
         </div>
       </div>
