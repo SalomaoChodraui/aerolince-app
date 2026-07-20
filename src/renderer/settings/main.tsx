@@ -69,14 +69,21 @@ function App() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErroChave(msg.replace(/^Error invoking remote method '[^']+': Error: /, ''));
+      setTeste((s) => ({ ...s, [nome]: '' })); // não deixa o botão Testar travado em '…'
     }
   }
   async function removerChave(nome: string) {
     setErroChave(null);
     testeGen.current[nome] = (testeGen.current[nome] ?? 0) + 1;
-    setCofre(await api.secretsSet(nome, ''));
-    setTeste((s) => ({ ...s, [nome]: '' }));
-    flashSalvo();
+    try {
+      setCofre(await api.secretsSet(nome, ''));
+      setTeste((s) => ({ ...s, [nome]: '' }));
+      flashSalvo();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErroChave(msg.replace(/^Error invoking remote method '[^']+': Error: /, ''));
+      setTeste((s) => ({ ...s, [nome]: '' })); // não deixa o botão Testar travado em '…'
+    }
   }
   async function rodarTeste(nome: string) {
     const geracao = (testeGen.current[nome] = (testeGen.current[nome] ?? 0) + 1);
