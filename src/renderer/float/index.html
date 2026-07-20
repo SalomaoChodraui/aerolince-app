@@ -46,6 +46,22 @@
         color: var(--branco);
         animation: pulsa 1.1s infinite;
       }
+      /* Sessão aberta, aguardando fala — respiração lenta (calma, mas viva). */
+      .ouvindo {
+        background: var(--oxido);
+        border-color: var(--oxido);
+        color: var(--branco);
+        box-shadow: 0 0 0 2px var(--oxido-suave);
+        animation: respirar 2.4s ease-in-out infinite;
+      }
+      /* Registrando a fala — mesmo peso visual do gravando (pulso). */
+      .falando {
+        background: var(--oxido);
+        border-color: var(--oxido);
+        color: var(--branco);
+        box-shadow: 0 0 0 3px var(--oxido);
+        animation: pulsa 1.1s infinite;
+      }
       .processando {
         background: var(--preto);
         border-color: var(--preto);
@@ -81,8 +97,12 @@
         0%, 100% { opacity: 1; }
         50% { opacity: 0.35; }
       }
+      @keyframes respirar {
+        0%, 100% { opacity: 0.75; }
+        50% { opacity: 1; }
+      }
       @media (prefers-reduced-motion: reduce) {
-        .gravando, .processando svg { animation: none; }
+        .gravando, .ouvindo, .falando, .processando svg { animation: none; }
       }
       .tempo {
         position: absolute;

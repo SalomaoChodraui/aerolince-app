@@ -2,83 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
 import { SimboloA } from '../shared/SimboloA.js';
+import type { RendererConfig } from '../shared/types.js';
+import { iniciarCapturaVad, type CapturaVad } from './captura-vad.js';
 
-// ── SPIKE VAD (temporário — substituído pela captura real na Task 10) ──────────
-// Prova de que o Silero VAD (@ricky0123/vad-web) carrega com assets 100% locais
-// tanto em dev (servidor vite, `/vad/*`) quanto no empacotado (`file://` + app.asar).
-// Acionamento FORA do fluxo normal: só por clique com Alt pressionado, e por
-// window.__spikeVad (usado pela validação automatizada). Um clique normal grava
-// como sempre. `base` é a expressão que as Tasks 10/11 reutilizam literalmente.
-import { MicVAD, NonRealTimeVAD } from '@ricky0123/vad-web';
+type Fase = 'idle' | 'ouvindo' | 'falando' | 'gravando' | 'processando' | 'ok' | 'erro';
 
-async function spikeVad(): Promise<void> {
-  const base = import.meta.env.DEV ? '/vad/' : new URL('../vad/', location.href).toString();
-  console.log('[spike-vad] iniciando MicVAD.new — base =', base);
-  try {
-    let frames = 0;
-    const vad = await MicVAD.new({
-      model: 'v5',
-      baseAssetPath: base,
-      onnxWASMBasePath: base,
-      onSpeechStart: () => console.log('[spike-vad] fala começou'),
-      onSpeechEnd: (audio) =>
-        console.log('[spike-vad] fala terminou', audio.length, 'amostras @16kHz'),
-      onFrameProcessed: (p) => {
-        if (++frames % 50 === 0)
-          console.log('[spike-vad] frames processados =', frames, 'p(fala)=', p.isSpeech.toFixed(3));
-      },
-    });
-    console.log('[spike-vad] MicVAD pronto — worklet + wasm + onnx carregados localmente (sem CDN)');
-    vad.start();
-    console.log('[spike-vad] VAD iniciado — fale e cale para ver os eventos');
-  } catch (err) {
-    console.error('[spike-vad] ERRO ao carregar/iniciar o VAD:', err);
-  }
+// Sessão de escuta segmentada (VAD): 'ouvindo' = sessão aberta aguardando fala,
+// 'falando' = registrando um trecho. O clássico usa 'gravando' (MediaRecorder), intacto.
+const SESSAO_ATIVA: Fase[] = ['ouvindo', 'falando'];
+const emSessao = (f: Fase): boolean => SESSAO_ATIVA.includes(f);
+
+/** m:ss — usado no contador `fala · total` da sessão segmentada. */
+function fmt(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
-
-// Prova DETERMINÍSTICA (sem microfone): roda o modelo Silero, carregado dos mesmos
-// assets locais, sobre um PCM de fala conhecido (Int16 mono @16 kHz em base64) e
-// registra os segmentos de fala. Usada só pela validação automatizada.
-async function spikeVadDetect(pcmB64: string): Promise<void> {
-  const base = import.meta.env.DEV ? '/vad/' : new URL('../vad/', location.href).toString();
-  console.log('[spike-vad] detect — base =', base);
-  try {
-    const bin = atob(pcmB64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const i16 = new Int16Array(bytes.buffer);
-    const f32 = new Float32Array(i16.length);
-    for (let i = 0; i < i16.length; i++) f32[i] = i16[i]! / 0x8000;
-    const vad = await NonRealTimeVAD.new({
-      modelURL: `${base}silero_vad_legacy.onnx`,
-      modelFetcher: (path) => fetch(path).then((r) => r.arrayBuffer()),
-      ortConfig: (ort) => {
-        ort.env.wasm.wasmPaths = base;
-      },
-    });
-    let n = 0;
-    for await (const seg of vad.run(f32, 16_000)) {
-      n++;
-      console.log('[spike-vad] fala começou', (seg.start / 1000).toFixed(2), 's');
-      console.log('[spike-vad] fala terminou', seg.audio.length, 'amostras @16kHz');
-    }
-    console.log('[spike-vad] segmentos de fala detectados =', n);
-  } catch (err) {
-    console.error('[spike-vad] ERRO no detect offline:', err);
-  }
-}
-
-if (typeof window !== 'undefined') {
-  const w = window as unknown as { __spikeVad?: () => void; __spikeVadDetect?: (b64: string) => void };
-  w.__spikeVad = spikeVad;
-  w.__spikeVadDetect = spikeVadDetect;
-}
-// ──────────────────────────────────────────────────────────────────────────────
-
-type Fase = 'idle' | 'gravando' | 'processando' | 'ok' | 'erro';
 
 function Icone({ fase }: { fase: Fase }) {
-  if (fase === 'gravando') return <span className="parar" />;
+  // Sessão ativa e gravando clássico mostram o mesmo "parar" (clique encerra); o CSS diferencia.
+  if (fase === 'gravando' || fase === 'ouvindo' || fase === 'falando') return <span className="parar" />;
   if (fase === 'ok') return <>✓</>;
   if (fase === 'erro') return <>!</>;
   return <SimboloA size={30} />;
@@ -93,10 +35,21 @@ function App() {
   const cancelado = useRef(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const faseRef = useRef<Fase>('idle');
-  const drag = useRef<{ offX: number; offY: number; moved: boolean; alt: boolean } | null>(null);
+  const drag = useRef<{ offX: number; offY: number; moved: boolean } | null>(null);
+  // Sessão segmentada (VAD): controlador da captura + medições do contador `fala · total`.
+  const captura = useRef<CapturaVad | null>(null);
+  const inicioSessao = useRef(0);
+  const falaMs = useRef(0);
+  const inicioFala = useRef<number | null>(null);
+  const semCofre = useRef(false);
+  // Geração da sessão: cresce a cada início/encerramento/cancelamento. Evita microfone
+  // aberto se o usuário encerrar/cancelar enquanto o VAD ainda carrega o modelo.
+  const geracao = useRef(0);
   faseRef.current = fase;
 
-  async function iniciar() {
+  // Fluxo clássico (config.stt.captura === 'classica'): MediaRecorder → webm → processarAudio.
+  // Movido SEM alteração de lógica (getUserMedia segue sem tratamento próprio, como hoje).
+  async function iniciarClassico() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     chunks.current = [];
@@ -117,6 +70,83 @@ function App() {
     timer.current = setInterval(() => setSegundos((s) => s + 1), 1000);
   }
 
+  // Início do ditado: lê a config (primeira vez que o float consulta config) e bifurca.
+  async function iniciar() {
+    try {
+      const config = (await window.aerolince.configGet()) as RendererConfig;
+      if (config.stt.captura === 'classica') return iniciarClassico();
+      const gen = ++geracao.current;
+      const r = await window.aerolince.sessaoIniciar();
+      if (!r.ok) throw new Error(r.erro ?? 'Não consegui iniciar o ditado.');
+      semCofre.current = r.semCofre === true; // sem cofre do SO → segue, mas avisa no tooltip
+      inicioSessao.current = Date.now();
+      falaMs.current = 0;
+      inicioFala.current = null;
+      setFase('ouvindo');
+      setSegundos(0);
+      if (timer.current) clearInterval(timer.current);
+      timer.current = setInterval(() => setSegundos((s) => s + 1), 1000);
+      const cap = await iniciarCapturaVad({
+        pausaMs: config.stt.pausaMs,
+        aoFalar: () => {
+          inicioFala.current = Date.now();
+          setFase('falando');
+        },
+        aoSilenciar: () => {
+          inicioFala.current = null;
+          setFase((f) => (f === 'falando' ? 'ouvindo' : f));
+        },
+        aoSegmento: (pcm, ms) => {
+          falaMs.current += ms;
+          void window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms);
+        },
+      });
+      if (geracao.current !== gen) {
+        // Encerrado/cancelado enquanto o VAD carregava: descarta a captura para não
+        // deixar o microfone aberto sem sessão.
+        void cap.cancelar();
+        return;
+      }
+      captura.current = cap;
+    } catch (e) {
+      captura.current = null;
+      if (timer.current) clearInterval(timer.current);
+      void window.aerolince.sessaoCancelar(); // limpa a sessão do main se ela chegou a abrir
+      // getUserMedia negado/sem device → orienta; demais erros caem no aviso genérico.
+      const nome = e instanceof DOMException ? e.name : '';
+      setAviso(nome === 'NotAllowedError' || nome === 'NotFoundError' ? 'microfone' : 'erro');
+      setFase('erro');
+      setTimeout(() => {
+        if (faseRef.current === 'erro') {
+          setFase('idle');
+          setAviso('');
+        }
+      }, 3500);
+    }
+  }
+
+  // Encerrar a sessão segmentada: flush do trecho em andamento → consolida no main → pipeline.
+  // Os eventos 'estado' (processando/ok/erro) seguem pelo listener existente, igual ao clássico.
+  async function encerrarSessao() {
+    geracao.current++; // invalida um VAD que ainda esteja carregando
+    if (timer.current) clearInterval(timer.current);
+    await captura.current?.parar();
+    captura.current = null;
+    setFase('processando');
+    await window.aerolince.sessaoEncerrar();
+  }
+
+  // Esc numa sessão segmentada: descarta tudo (sem consolidar) e volta ao repouso.
+  async function cancelarSessao() {
+    geracao.current++;
+    if (timer.current) clearInterval(timer.current);
+    await captura.current?.cancelar();
+    captura.current = null;
+    void window.aerolince.sessaoCancelar();
+    setFase('idle');
+  }
+
+  // Parar clássico (MediaRecorder). `cancelar` descarta o áudio; senão dispara o pipeline no onstop.
   function parar(cancelar = false) {
     cancelado.current = cancelar;
     if (timer.current) clearInterval(timer.current);
@@ -127,7 +157,17 @@ function App() {
   function toggle() {
     const f = faseRef.current;
     if (f === 'gravando') parar(false);
+    else if (emSessao(f)) void encerrarSessao();
     else if (f === 'idle' || f === 'ok' || f === 'erro') void iniciar();
+    // 'processando': ignora (clássico e segmentado)
+  }
+
+  // Contador da sessão: `fala · total` (m:ss). A fala só avança enquanto há trecho em curso
+  // (inicioFala != null); o total avança sempre desde o início da sessão.
+  function textoSessao(): string {
+    const fala = falaMs.current + (inicioFala.current ? Date.now() - inicioFala.current : 0);
+    const total = Date.now() - inicioSessao.current;
+    return `${fmt(fala)} · ${fmt(total)}`;
   }
 
   // Clique = ditar; arrastar = mover a janela (distinção por movimento do mouse)
@@ -136,7 +176,6 @@ function App() {
       offX: e.screenX - window.screenX,
       offY: e.screenY - window.screenY,
       moved: false,
-      alt: e.altKey,
     };
   }
   useEffect(() => {
@@ -153,10 +192,8 @@ function App() {
     function onUp() {
       const d = drag.current;
       drag.current = null;
-      if (!d || d.moved) return;
-      // SPIKE VAD (temporário): Alt+clique aciona a prova de carga; clique normal grava.
-      if (d.alt) void spikeVad();
-      else toggle();
+      if (!d || d.moved) return; // arraste move a janela; clique dispara o ditado
+      toggle();
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -169,7 +206,9 @@ function App() {
   useEffect(() => {
     window.aerolince.onAtalhoToggle(toggle);
     window.aerolince.onAtalhoCancelar(() => {
-      if (faseRef.current === 'gravando') parar(true);
+      const f = faseRef.current;
+      if (f === 'gravando') parar(true);
+      else if (emSessao(f)) void cancelarSessao();
     });
     window.aerolince.onEstado(({ fase: nova, msg }) => {
       setFase(nova as Fase);
@@ -190,11 +229,19 @@ function App() {
   }, []);
 
   const titulo =
-    fase === 'gravando'
-      ? 'Gravando — clique para parar (Esc cancela). Arraste para mover.'
-      : fase === 'erro'
-        ? 'Não consegui gerar o laudo — clique para tentar de novo'
-        : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
+    fase === 'ouvindo'
+      ? semCofre.current
+        ? 'Ouvindo — clique para gerar o laudo (Esc cancela). Sem cofre do sistema: o ditado não será recuperável se o app fechar.'
+        : 'Ouvindo — clique para gerar o laudo (Esc cancela)'
+      : fase === 'falando'
+        ? 'Registrando sua fala…'
+        : fase === 'gravando'
+          ? 'Gravando — clique para parar (Esc cancela). Arraste para mover.'
+          : fase === 'erro'
+            ? aviso === 'microfone'
+              ? 'Permita o acesso ao microfone para ditar.'
+              : 'Não consegui gerar o laudo — clique para tentar de novo'
+            : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover.';
 
   return (
     <>
@@ -202,6 +249,7 @@ function App() {
         <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}
+      {emSessao(fase) && <div className="tempo">{textoSessao()}</div>}
       {fase === 'erro' && aviso && <div className="tempo aviso">{aviso}</div>}
     </>
   );
