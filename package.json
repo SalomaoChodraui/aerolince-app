@@ -10,6 +10,7 @@
     "dev": "electron-vite dev",
     "prebuild:app": "node scripts/copiar-assets-vad.mjs",
     "build:app": "electron-vite build",
+    "predist": "node scripts/copiar-assets-vad.mjs",
     "dist": "electron-vite build && electron-builder --mac dmg --win nsis",
     "laudo": "tsx src/cli/index.ts",
     "sanitize": "tsx scripts/sanitize-pdfs.ts",
