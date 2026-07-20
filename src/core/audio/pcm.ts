@@ -16,3 +16,18 @@ export function float32ParaInt16(entrada: Float32Array): Int16Array {
 export function duracaoMs(amostras: number, sampleRate: number = SAMPLE_RATE): number {
   return Math.round((amostras / sampleRate) * 1000);
 }
+
+/**
+ * Fatia PCM em pedaços contíguos de no máximo `maxAmostras` (sem overlap). Cada pedaço
+ * é um Int16Array independente com `.buffer` do tamanho exato, seguro para transferir via
+ * IPC. Fala curta (≤ cap) devolve o próprio array intacto — sem cópia no caso comum.
+ * Usado para não estourar o cap de tamanho de segmento do IPC/main numa fala muito longa.
+ */
+export function fatiarPcm(pcm: Int16Array, maxAmostras: number): Int16Array[] {
+  if (pcm.length <= maxAmostras) return [pcm];
+  const partes: Int16Array[] = [];
+  for (let i = 0; i < pcm.length; i += maxAmostras) {
+    partes.push(pcm.slice(i, i + maxAmostras)); // slice → novo buffer do tamanho exato
+  }
+  return partes;
+}

@@ -1,5 +1,10 @@
 import { MicVAD } from '@ricky0123/vad-web';
-import { duracaoMs, float32ParaInt16 } from '../../core/audio/pcm.js';
+import { duracaoMs, fatiarPcm, float32ParaInt16, SAMPLE_RATE } from '../../core/audio/pcm.js';
+
+// Fala contínua acima disto é fatiada antes de enviar: um único segmento >~2 min estoura o cap
+// de tamanho do IPC/main e seria recusado. 60 s viram segmentos contíguos na consolidação (sem
+// overlap, gap curto entre eles) — perda de conteúdo zero.
+const MAX_AMOSTRAS_SEGMENTO = 60 * SAMPLE_RATE;
 
 export interface CapturaVad {
   /** Encerra flushando o segmento em andamento (submitUserSpeechOnPause). */
@@ -33,7 +38,11 @@ export async function iniciarCapturaVad(opts: OpcoesCaptura): Promise<CapturaVad
     onSpeechEnd: (audio: Float32Array) => {
       opts.aoSilenciar();
       const pcm = float32ParaInt16(audio); // novo array → .buffer tem o tamanho exato
-      opts.aoSegmento(pcm, duracaoMs(audio.length));
+      // Fala longa vira vários segmentos ≤60 s (cada um com sua duração proporcional) para não
+      // ser recusada pelos caps do IPC/main; fala curta passa como um único segmento intacto.
+      for (const parte of fatiarPcm(pcm, MAX_AMOSTRAS_SEGMENTO)) {
+        opts.aoSegmento(parte, duracaoMs(parte.length));
+      }
     },
   });
   vad.start();

@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
 }));
 
 const { SessaoAudio } = await import('./sessao.js');
-const { listarSessoesOrfas } = await import('./spool.js');
+const { SpoolSessao, listarSessoesOrfas } = await import('./spool.js');
 
 let root: string;
 let sessao: InstanceType<typeof SessaoAudio>;
@@ -56,5 +56,19 @@ describe('SessaoAudio', () => {
 
   it('finalizar sem sessão → null', () => {
     expect(sessao.finalizar()).toBeNull();
+  });
+
+  it('falha ao criar o spool (EACCES/ENOSPC) degrada para só-memória, sem derrubar o ditado', () => {
+    const criar = vi.spyOn(SpoolSessao, 'criar').mockImplementation(() => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(sessao.iniciar(root)).toEqual({ ok: true, semCofre: true });
+    expect(warn).toHaveBeenCalled();
+    // ditado segue normalmente, só sem o spool cifrado
+    expect(sessao.receberSegmento(pcmBuf(1600), 100).ok).toBe(true);
+    expect(sessao.finalizar()!.spool).toBeNull();
+    criar.mockRestore();
+    warn.mockRestore();
   });
 });

@@ -98,7 +98,10 @@ function App() {
         },
         aoSegmento: (pcm, ms) => {
           falaMs.current += ms;
-          void window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms);
+          // Não ignora a recusa: um segmento recusado (ex.: acima do cap) some em silêncio hoje.
+          void window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms).then((r) => {
+            if (!r.ok) console.warn('[aerolince] segmento recusado:', r.erro);
+          });
         },
       });
       if (geracao.current !== gen) {
@@ -218,6 +221,10 @@ function App() {
       else if (emSessao(f)) void cancelarSessao();
     });
     window.aerolince.onEstado(({ fase: nova, msg }) => {
+      // Durante a sessão VAD o balão é dono do próprio estado: um 'estado' de fluxo alheio
+      // (recovery no boot, refino na janela de resultado) não pode derrubá-lo a 'idle' com o
+      // microfone vivo — o encerramento da sessão chega em 'processando', fora de SESSAO_ATIVA.
+      if (emSessao(faseRef.current)) return;
       setFase(nova as Fase);
       if (nova === 'ok') {
         setAviso('');

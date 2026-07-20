@@ -23,7 +23,15 @@ export class SessaoAudio {
 
   iniciar(spoolRoot: string): { ok: true; semCofre: boolean } | { ok: false; erro: string } {
     if (this.ativa) return { ok: false, erro: 'Já existe um ditado em andamento.' };
-    this.spool = SpoolSessao.criar(spoolRoot);
+    // Falha ao criar o spool (EACCES/ENOSPC) não derruba o ditado: degrada para só-memória
+    // (o spool é seguro opcional contra crash, não requisito para ditar).
+    try {
+      this.spool = SpoolSessao.criar(spoolRoot);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`spool: falha ao criar sessão em disco, seguindo só em memória — ${msg}`);
+      this.spool = null;
+    }
     this.segmentos = [];
     this.speechMs = 0;
     this.iniciadaEm = Date.now();
