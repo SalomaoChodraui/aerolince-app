@@ -20,6 +20,7 @@ import { encodeWavPcm16 } from '../core/audio/wav.js';
 import { Config, loadConfig, saveConfig } from '../core/config/schema.js';
 import { saveReport, saveSidecar } from '../core/output/output.js';
 import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
+import { recuperarSpoolOrfao } from './audio/recovery.js';
 import { SessaoAudio } from './audio/sessao.js';
 import { listarHistorico, lerLaudo, salvarFinalEditado } from './historico.js';
 import {
@@ -287,6 +288,17 @@ function bootstrap(): string {
     }
   }
   carregarChaves(root);
+  // Recovery de ditado interrompido: oferecer/expirar o spool órfão SEM travar o
+  // boot (fire-and-forget). O diálogo só resolve após interação do usuário, quando
+  // as janelas e o pipeline já existem; erro na transcrição preserva o spool (≤48 h).
+  void recuperarSpoolOrfao(spoolRoot(), (segmentos, speechMs) =>
+    gerarDeSegmentos(segmentos, speechMs, speechMs), // capturedMs desconhecido → usar speechMs (ratio 1)
+  ).catch((e) => {
+    dialog.showErrorBox(
+      'Recuperação do ditado falhou',
+      `${e instanceof Error ? e.message : e}\n\nO ditado continua guardado (cifrado) e será oferecido de novo na próxima abertura, por até 48 h.`,
+    );
+  });
   return root;
 }
 
