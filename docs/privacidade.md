@@ -8,8 +8,9 @@
    fase; o fluxo é declarado no onboarding. Durante a sessão de escuta, só os trechos com fala são
    registrados. Eles ficam temporariamente no disco **cifrados** (AES-256-GCM, chave de sessão protegida
    pelo cofre do sistema operacional via `safeStorage`) e são apagados logo após a transcrição. Se o app
-   falhar no meio do ditado, os trechos cifrados permanecem por até 48 h para recuperação e depois são
-   apagados. Áudio em claro nunca toca o disco. (A CLI de desenvolvimento, fora do app, ainda grava
+   falhar no meio do ditado, os trechos cifrados permanecem por até 48 h para recuperação e são
+   apagados na próxima abertura do app (a expiração roda no boot; se o app nunca reabrir, os
+   arquivos cifrados permanecem). Áudio em claro nunca toca o disco. (A CLI de desenvolvimento, fora do app, ainda grava
    `.wav` local — fora do git.) O áudio não deve conter dados do paciente — a melhor proteção é não
    ditá-los. STT local é alternativa avaliada para a Fase 2.
 3. **Limitações conhecidas da sanitização (regex):** nomes ditados sem gatilho ("paciente", "doutor") podem

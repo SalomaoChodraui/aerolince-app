@@ -121,7 +121,10 @@ export async function transcreverConsolidado(
   let uploadedBytes = 0;
   let custoSttUSD: number | undefined;
   for (const wav of wavs) {
-    const cauda = transcript ? transcript.slice(-CAUDA_CHARS) : undefined;
+    // A cauda vira promptExtra do STT (API externa) → passa pelo anonymizer antes (regra do
+    // CLAUDE.md). Sanitiza o transcript inteiro e então corta, para pegar um identificador que
+    // caísse dentro da janela de CAUDA_CHARS.
+    const cauda = transcript ? sanitizeComando(transcript).texto.slice(-CAUDA_CHARS) : undefined;
     const r = await stt.transcribeBuffer(wav, 'ditado.wav', cauda);
     transcript = transcript ? `${transcript} ${r.text}` : r.text;
     sttMs += r.durationMs;

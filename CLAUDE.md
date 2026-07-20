@@ -16,7 +16,8 @@ Plano original e decisões em `docs/decisoes.md`.
 - Todo **texto** só pode ir para APIs **depois** de passar pelo `src/core/anonymizer` localmente
   (no app/CLI: `sanitizeComando` no pipeline). O **áudio** do ditado vai à OpenAI para transcrição sem
   anonimização prévia (limitação declarada no onboarding e em `docs/privacidade.md`) — no app, só os
-  trechos com fala são retidos — cifrados em disco (spool AES-256-GCM com chave no cofre do SO) e
+  trechos com fala são retidos — cifrados em disco quando o cofre do SO está disponível (spool
+  AES-256-GCM com chave protegida pelo cofre; sem cofre, ficam apenas em memória) e
   apagados após a transcrição; em caso de crash, ficam ≤48 h para recuperação (a CLI de desenvolvimento
   grava `.wav` local, fora do git), e o transcript resultante é sanitizado antes do LLM.
 - Nomes de arquivos derivados de laudos reais não podem conter nome de paciente
