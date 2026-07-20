@@ -51,6 +51,18 @@ describe('loadConfig com recuperação', () => {
     expect(c.perfilPadrao).toBe('meu-estilo'); // veio do .bak
     expect(readFileSync(join(root, 'laudo.config.json'), 'utf8')).toContain('meu-estilo');
   });
+
+  it('config antiga sem os campos novos de stt ganha defaults', () => {
+    writeFileSync(
+      join(root, 'laudo.config.json'),
+      JSON.stringify({ schemaVersion: 1, stt: { model: 'gpt-4o-transcribe' } }),
+      'utf8',
+    );
+    const c = loadConfig(root);
+    expect(c.stt.captura).toBe('segmentada');
+    expect(c.stt.pausaMs).toBe(1200);
+    expect(c.stt.model).toBe('gpt-4o-transcribe');
+  });
 });
 
 describe('saveConfig atômico', () => {
@@ -79,5 +91,18 @@ describe('saveConfig atômico', () => {
   it('não deixa arquivo temporário para trás', () => {
     saveConfig(root, { perfilPadrao: 'x' });
     expect(readdirSync(root).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('pausaMs fora do intervalo é rejeitado', () => {
+    expect(() => saveConfig(root, { stt: { pausaMs: 100 } })).toThrow();
+  });
+
+  it('merge raso de stt preserva campos não enviados', () => {
+    saveConfig(root, { stt: { glossario: ['esteatose'] } });
+    saveConfig(root, { stt: { pausaMs: 2000 } });
+    const c = loadConfig(root);
+    expect(c.stt.pausaMs).toBe(2000);
+    expect(c.stt.glossario).toEqual(['esteatose']);
+    expect(c.stt.captura).toBe('segmentada');
   });
 });

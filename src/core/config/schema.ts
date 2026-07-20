@@ -31,6 +31,8 @@ export const ConfigSchema = z.object({
   stt: z.object({
     model: z.string().default('gpt-4o-transcribe'),
     glossario: z.array(z.string()).default([]),
+    captura: z.enum(['segmentada', 'classica']).default('segmentada'), // ditado do balão; refino por voz segue clássico
+    pausaMs: z.number().int().min(400).max(5000).default(1200), // silêncio que fecha um trecho de fala
   }),
   llm: z.object({
     selectionModel: z.string().default('claude-haiku-4-5'),

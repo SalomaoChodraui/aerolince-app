@@ -13,6 +13,13 @@ export interface UIConfig {
   balaoPos: { x: number; y: number } | null;
 }
 
+export interface SttConfig {
+  model: string;
+  glossario: string[];
+  captura: 'segmentada' | 'classica';
+  pausaMs: number;
+}
+
 export interface RendererConfig {
   masksDir: string;
   profilesDir: string;
@@ -21,4 +28,5 @@ export interface RendererConfig {
   onboardingConcluido: boolean;
   ui: UIConfig;
   macros: Macro[];
+  stt: SttConfig;
 }

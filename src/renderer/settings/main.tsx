@@ -52,6 +52,11 @@ function App() {
     setCfg(c);
     flashSalvo();
   }
+  async function patchStt(patch: Partial<RendererConfig['stt']>) {
+    const c = (await api.configSet({ stt: patch })) as RendererConfig;
+    setCfg(c);
+    flashSalvo();
+  }
   function flashSalvo() {
     setSalvo(true);
     setTimeout(() => setSalvo(false), 1200);
@@ -290,6 +295,40 @@ function App() {
               <div className="desc">Abre a pasta das máscaras e regras — edite os arquivos .md em qualquer editor</div>
             </div>
             <button onClick={() => api.abrirPasta(cfg.masksDir)}>Abrir pasta</button>
+          </div>
+        </div>
+
+        <div className="secao">
+          <h2>Ditado</h2>
+          <div className="linha">
+            <div>
+              <div className="rot">Captura de voz</div>
+            </div>
+            <select
+              className="ctrl"
+              value={cfg.stt.captura}
+              onChange={(e) => patchStt({ captura: e.target.value as RendererConfig['stt']['captura'] })}
+            >
+              <option value="segmentada">Segmentada (recomendado)</option>
+              <option value="classica">Clássica</option>
+            </select>
+          </div>
+          <div className="linha">
+            <div>
+              <div className="rot">Pausa que fecha o trecho (s)</div>
+            </div>
+            <input
+              className="ctrl"
+              type="number"
+              min={0.4}
+              max={5}
+              step={0.1}
+              value={cfg.stt.pausaMs / 1000}
+              onChange={(e) => patchStt({ pausaMs: Math.round(Number(e.target.value) * 1000) })}
+            />
+          </div>
+          <div className="desc" style={{ padding: '4px 14px' }}>
+            Na captura segmentada, só os trechos com fala são enviados para transcrição.
           </div>
         </div>
       </div>
