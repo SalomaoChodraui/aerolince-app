@@ -46,7 +46,8 @@ Plano original e decisões em `docs/decisoes.md`.
 - Validação com zod em TODAS as fronteiras (config, frontmatter, respostas de LLM).
 - Prompts centralizados em `src/core/engine/prompts.ts` — o coração da qualidade.
 - Testes com vitest ao lado do código (`*.test.ts`).
-- PT-BR em strings voltadas ao usuário e nos prompts; código/identificadores em inglês.
+- PT-BR em strings voltadas ao usuário e nos prompts; identificadores seguem o padrão do
+  módulo vizinho (na prática, PT sem acentos: `gerarComMascara`, `salvarChave`).
 
 ## Comandos
 

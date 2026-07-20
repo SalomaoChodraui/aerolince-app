@@ -30,3 +30,6 @@ laudo.config.corrompido-*.json
 
 # Cofre de chaves (criptografado, mas nunca versionar)
 secrets.enc.json
+
+# Infra local de observação de skills (Claude Code)
+skill-observations/
