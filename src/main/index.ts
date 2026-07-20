@@ -15,8 +15,11 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
+import { consolidarSegmentos, particionarPorBytes } from '../core/audio/consolidar.js';
+import { encodeWavPcm16 } from '../core/audio/wav.js';
 import { Config, loadConfig, saveConfig } from '../core/config/schema.js';
 import { saveReport, saveSidecar } from '../core/output/output.js';
+import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
 import { SessaoAudio } from './audio/sessao.js';
 import { listarHistorico, lerLaudo, salvarFinalEditado } from './historico.js';
 import {
@@ -27,6 +30,7 @@ import {
   getOutputDir,
   initPipeline,
   processarAudio,
+  processarAudioSegmentado,
   processarTexto,
   refinarAudio,
   refinarTexto,
@@ -237,6 +241,8 @@ async function entregar(r: ResultadoLaudo): Promise<void> {
     custoUSD: r.custoUSD,
     blocosAlterados: r.blocosAlterados,
     laudoGerado: r.report,
+    // Só no ditado segmentado; ausente (undefined) nos demais fluxos — JSON omite.
+    audio: r.audio,
     origem: 'app',
   });
   resultWin?.webContents.send('resultado', { ...r, savedPath: saved, arquivo: ultimoArquivo });
@@ -316,10 +322,25 @@ function registrarIpc(): void {
     return { ok: true };
   });
 
-  // STUB Task 8: encerrar deve finalizar() → gerarDeSegmentos() → descartar spool no sucesso,
-  // replicando o tratamento de erro (estado 'erro' + resultado-erro) do handler 'processar-audio'.
-  // A Task 7 só monta a sessão/IPC; o pipeline segmentado fecha o fio na próxima task.
-  ipcMain.handle('sessao-encerrar', () => ({ ok: false, erro: 'pipeline segmentado entra na próxima task' }));
+  // Encerrar: finaliza a sessão → pipeline segmentado → descarta o spool só no
+  // sucesso. Em erro, replica o tratamento do handler 'processar-audio' vizinho
+  // (estado 'erro' + evento 'resultado-erro') e PRESERVA o spool p/ recovery (Task 11).
+  ipcMain.handle('sessao-encerrar', async () => {
+    const fin = sessaoAudio.finalizar();
+    if (!fin) return { ok: false, erro: 'Nenhum ditado em andamento.' };
+    estado('processando');
+    try {
+      await gerarDeSegmentos(fin.segmentos, fin.capturedMs, fin.speechMs);
+      fin.spool?.descartar(); // só após sucesso; em erro fica p/ recovery no boot (≤48 h)
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      estado('erro', msg);
+      resultWin?.webContents.send('resultado-erro', msg);
+      resultWin?.showInactive();
+      return { ok: false, erro: msg };
+    }
+  });
 
   ipcMain.handle('desfazer', () => {
     const r = desfazer();
@@ -386,28 +407,29 @@ function registrarIpc(): void {
   });
 }
 
-// ── Pipeline segmentado (STUB Task 8) ────────────────────────────────────────
-// Reservado para a Task 8, que também é reusado pelo recovery (Task 11). Fica
-// comentado nesta task para manter typecheck verde sem código morto: depende de
-// `processarAudioSegmentado` (ainda não existe) e dos imports abaixo.
-//
-// Ao ativar na Task 8, adicionar no topo:
-//   import { consolidarSegmentos, particionarPorBytes } from '../core/audio/consolidar.js';
-//   import { encodeWavPcm16 } from '../core/audio/wav.js';
-//   import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
-//   import { processarAudioSegmentado } from './pipeline.js';
-// e trocar o stub do handler 'sessao-encerrar' por finalizar() → gerarDeSegmentos() → descartar.
-//
-// Consolida → particiona em ≤24 MB → WAVs → pipeline segmentado → entregar().
-// Sessão sem fala vira WAV de 44 bytes e cai no validarAudio (<1024) → aviso "sem áudio" de hoje.
-//
-// async function gerarDeSegmentos(segmentos: Int16Array[], capturedMs: number, speechMs: number): Promise<void> {
-//   const grupos = particionarPorBytes(segmentos, MAX_AUDIO_BYTES);
-//   const wavs = grupos.map((g) => encodeWavPcm16(consolidarSegmentos(g).pcm));
-//   if (wavs.length === 0) wavs.push(encodeWavPcm16(new Int16Array(0)));
-//   const res = await processarAudioSegmentado(wavs, { capturedMs, speechMs });
-//   await entregar(res); // mesma entrega do fluxo atual (janela de resultado + sidecar)
-// }
+// ── Pipeline segmentado (ditado por voz) ─────────────────────────────────────
+// Consolida → particiona em ≤24 MB → WAVs → pipeline segmentado → entrega.
+// Sessão sem fala vira WAV de 44 bytes e cai no validarAudio (<1024) → mesmo
+// aviso "sem áudio" de hoje (NUNCA um atalho separado). LANÇA em erro para o
+// handler 'sessao-encerrar' preservar o spool; reusado pelo recovery (Task 11).
+async function gerarDeSegmentos(
+  segmentos: Int16Array[],
+  capturedMs: number,
+  speechMs: number,
+): Promise<void> {
+  const grupos = particionarPorBytes(segmentos, MAX_AUDIO_BYTES);
+  const wavs = grupos.map((g) => encodeWavPcm16(consolidarSegmentos(g).pcm));
+  if (wavs.length === 0) wavs.push(encodeWavPcm16(new Int16Array(0)));
+  const res = await processarAudioSegmentado(wavs, { capturedMs, speechMs });
+  // Mesma bifurcação de entregar()/confirmar-mascara do wrapper processar().
+  if (res.tipo === 'confirmar-mascara') {
+    resultWin?.webContents.send('confirmar-mascara', res);
+    resultWin?.showInactive();
+    estado('ok');
+    return;
+  }
+  await entregar(res); // janela de resultado + sidecar (com telemetria de áudio)
+}
 
 app.whenReady().then(() => {
   appRoot = bootstrap();

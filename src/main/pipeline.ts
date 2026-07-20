@@ -5,6 +5,7 @@
  * confiança (alta gera; media pede confirmação; baixa nunca gera).
  */
 import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
+import { duracaoMs } from '../core/audio/pcm.js';
 import { Config, loadConfig } from '../core/config/schema.js';
 import { loadProfile, loadRegras } from '../core/contexto.js';
 import { stripMarkers } from '../core/engine/diff.js';
@@ -14,7 +15,18 @@ import { getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
 import { validarAudio } from '../core/stt/audio-guard.js';
-import { OpenAISTT } from '../core/stt/openai.js';
+import { OpenAISTT, type STTProvider } from '../core/stt/openai.js';
+import { estimateSttCostUSD } from '../core/stt/pricing.js';
+
+/** Telemetria do ditado segmentado (só no fluxo por voz; vai ao sidecar). */
+export interface TelemetriaAudio {
+  capturedMs: number;
+  speechMs: number;
+  speechRatio: number;
+  uploadedBytes: number;
+  segmentosStt: number;
+  custoSttUSD?: number;
+}
 
 export interface ResultadoLaudo {
   tipo: 'laudo';
@@ -28,6 +40,8 @@ export interface ResultadoLaudo {
   avisos: string[];
   tempos: { sttMs: number; selecaoMs: number; geracaoMs: number };
   custoUSD: number;
+  /** Só presente no ditado segmentado (Task 8) — captura/fala/upload/custo STT. */
+  audio?: TelemetriaAudio;
 }
 
 /** Seleção com confiança média: o médico confirma a máscara antes de gerar. */
@@ -78,7 +92,77 @@ export async function processarAudio(audio: Buffer): Promise<ResultadoPipeline> 
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   const r = await stt.transcribeBuffer(audio, 'ditado.webm');
   if (!r.text) throw new Error('não entendi o áudio — tente de novo');
-  return processarTranscript(r.text, r.durationMs);
+  const res = await processarTranscript(r.text, r.durationMs);
+  // Custo STT via usage de tokens (duração do webm é desconhecida — sem audioMs).
+  const custoStt = estimateSttCostUSD(config.stt.model, { usage: r.usage });
+  if (res.tipo === 'laudo' && custoStt !== null) {
+    res.custoUSD = Number((res.custoUSD + custoStt).toFixed(4));
+  }
+  return res;
+}
+
+const CAUDA_CHARS = 150; // contexto do trecho anterior no prompt (limite de prompt do STT é curto)
+
+/**
+ * Transcreve N WAVs (quase sempre 1) em sequência, encadeando a cauda do
+ * transcript anterior como `promptExtra` para dar contexto ao próximo trecho.
+ * Custo somado por `usage` de tokens (fallback USD/min via duração do WAV).
+ * `validarAudio` roda em TODOS os WAVs antes de qualquer upload — o caso "sem
+ * áudio" (WAV de 44 bytes) dispara o guard existente sem chamar a API.
+ */
+export async function transcreverConsolidado(
+  stt: STTProvider,
+  wavs: Buffer[],
+  model: string,
+): Promise<{ transcript: string; sttMs: number; custoSttUSD?: number; uploadedBytes: number }> {
+  for (const wav of wavs) validarAudio(wav.byteLength);
+  let transcript = '';
+  let sttMs = 0;
+  let uploadedBytes = 0;
+  let custoSttUSD: number | undefined;
+  for (const wav of wavs) {
+    const cauda = transcript ? transcript.slice(-CAUDA_CHARS) : undefined;
+    const r = await stt.transcribeBuffer(wav, 'ditado.wav', cauda);
+    transcript = transcript ? `${transcript} ${r.text}` : r.text;
+    sttMs += r.durationMs;
+    uploadedBytes += wav.byteLength;
+    const custo = estimateSttCostUSD(model, {
+      usage: r.usage,
+      audioMs: duracaoMs((wav.byteLength - 44) / 2),
+    });
+    if (custo !== null) custoSttUSD = (custoSttUSD ?? 0) + custo;
+  }
+  return { transcript, sttMs, custoSttUSD, uploadedBytes };
+}
+
+/**
+ * Pipeline do ditado segmentado: WAVs consolidados → transcrição encadeada →
+ * seleção/geração (mesma rota do texto). Enriquece o laudo com o custo STT
+ * (somado ao `custoUSD`) e a telemetria de áudio (sidecar). Preserva o fluxo
+ * `ResultadoPipeline`: se a confiança for média, devolve o pedido de confirmação
+ * intocado (a telemetria só se aplica ao laudo entregue).
+ */
+export async function processarAudioSegmentado(
+  wavs: Buffer[],
+  tele: { capturedMs: number; speechMs: number },
+): Promise<ResultadoPipeline> {
+  exigirChave('OPENAI_API_KEY');
+  const config = getConfig();
+  const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
+  const t = await transcreverConsolidado(stt, wavs, config.stt.model);
+  const res = await processarTranscript(t.transcript, t.sttMs);
+  if (res.tipo === 'laudo') {
+    if (t.custoSttUSD) res.custoUSD = Number((res.custoUSD + t.custoSttUSD).toFixed(4));
+    res.audio = {
+      capturedMs: tele.capturedMs,
+      speechMs: tele.speechMs,
+      speechRatio: tele.capturedMs > 0 ? tele.speechMs / tele.capturedMs : 1,
+      uploadedBytes: t.uploadedBytes,
+      segmentosStt: wavs.length,
+      custoSttUSD: t.custoSttUSD,
+    };
+  }
+  return res;
 }
 
 interface Selecao {
@@ -243,7 +327,11 @@ export async function refinarAudio(audio: Buffer): Promise<ResultadoLaudo> {
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   const r = await stt.transcribeBuffer(audio, 'refino.webm');
   if (!r.text) throw new Error('não entendi o áudio do refino — tente de novo');
-  return refinarTranscript(r.text, r.durationMs);
+  const res = await refinarTranscript(r.text, r.durationMs);
+  // Custo STT via usage de tokens (só no refino por voz; sem audioMs — webm sem duração).
+  const custoStt = estimateSttCostUSD(config.stt.model, { usage: r.usage });
+  if (custoStt !== null) res.custoUSD = Number((res.custoUSD + custoStt).toFixed(4));
+  return res;
 }
 
 /** Volta uma versão do laudo da sessão (ou null se não houver o que desfazer). */
