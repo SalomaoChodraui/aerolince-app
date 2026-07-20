@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
 import '../shared/window.css';
@@ -26,6 +26,9 @@ function App() {
   const [erroChave, setErroChave] = useState<string | null>(null);
   const [novaChave, setNovaChave] = useState<Record<string, string>>({});
   const [salvo, setSalvo] = useState(false);
+  // Contador de geração por chave: descarta resultado de teste que chega depois de a
+  // chave já ter sido trocada/removida ou de um novo teste ter sido disparado.
+  const testeGen = useRef<Record<string, number>>({});
 
   useEffect(() => {
     void (async () => {
@@ -57,6 +60,7 @@ function App() {
   async function gravarChave(nome: string) {
     const valor = novaChave[nome] ?? '';
     setErroChave(null);
+    testeGen.current[nome] = (testeGen.current[nome] ?? 0) + 1;
     try {
       setCofre(await api.secretsSet(nome, valor));
       setNovaChave((s) => ({ ...s, [nome]: '' }));
@@ -69,13 +73,16 @@ function App() {
   }
   async function removerChave(nome: string) {
     setErroChave(null);
+    testeGen.current[nome] = (testeGen.current[nome] ?? 0) + 1;
     setCofre(await api.secretsSet(nome, ''));
     setTeste((s) => ({ ...s, [nome]: '' }));
     flashSalvo();
   }
   async function rodarTeste(nome: string) {
+    const geracao = (testeGen.current[nome] = (testeGen.current[nome] ?? 0) + 1);
     setTeste((s) => ({ ...s, [nome]: '…' }));
     const r = await api.secretsTestar(nome);
+    if (testeGen.current[nome] !== geracao) return; // chave foi trocada/removida ou novo teste disparado
     setTeste((s) => ({ ...s, [nome]: r.ok ? '✓ chave válida' : `✗ ${r.erro ?? 'falhou'}` }));
   }
 
@@ -205,7 +212,11 @@ function App() {
                 <button onClick={() => gravarChave(nome)} disabled={!(novaChave[nome] ?? '').trim()}>
                   Salvar
                 </button>
-                {st === 'ok' && <button onClick={() => rodarTeste(nome)}>Testar</button>}
+                {st === 'ok' && (
+                  <button onClick={() => rodarTeste(nome)} disabled={teste[nome] === '…'}>
+                    Testar
+                  </button>
+                )}
                 {st !== 'ausente' && (
                   <button className="fantasma" onClick={() => removerChave(nome)} title="Remover a chave">
                     ✕

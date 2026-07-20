@@ -118,15 +118,16 @@ export async function testarChave(nome: NomeChave): Promise<{ ok: boolean; erro?
   const valor = process.env[nome];
   if (!valor) return { ok: false, erro: 'chave não configurada' };
   const { url, headers } = ENDPOINTS[nome];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10_000);
     const resp = await fetch(url, { headers: headers(valor), signal: ctrl.signal });
-    clearTimeout(timer);
     if (resp.ok) return { ok: true };
     if (resp.status === 401 || resp.status === 403) return { ok: false, erro: 'chave inválida ou revogada' };
     return { ok: false, erro: `serviço respondeu ${resp.status}` };
   } catch {
     return { ok: false, erro: 'sem conexão com o serviço' };
+  } finally {
+    clearTimeout(timer);
   }
 }
