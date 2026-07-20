@@ -4,6 +4,10 @@ dist/
 out/
 release/
 
+# Assets do VAD copiados de node_modules por scripts/copiar-assets-vad.mjs
+# (binários de modelo/wasm — nunca versionar)
+src/renderer/public/
+
 # Segredos — NUNCA commitar chaves de API
 .env
 .env.*

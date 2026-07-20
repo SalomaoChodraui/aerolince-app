@@ -6,7 +6,9 @@
   "description": "Laudos de TC por comando de voz",
   "main": "./out/main/index.js",
   "scripts": {
+    "predev": "node scripts/copiar-assets-vad.mjs",
     "dev": "electron-vite dev",
+    "prebuild:app": "node scripts/copiar-assets-vad.mjs",
     "build:app": "electron-vite build",
     "dist": "electron-vite build && electron-builder --mac dmg --win nsis",
     "laudo": "tsx src/cli/index.ts",
@@ -17,8 +19,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
+    "@ricky0123/vad-web": "0.0.29",
     "dotenv": "^17.2.0",
     "gray-matter": "^4.0.3",
+    "onnxruntime-web": "1.22.0",
     "openai": "^6.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
