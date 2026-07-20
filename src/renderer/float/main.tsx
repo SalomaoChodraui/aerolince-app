@@ -109,6 +109,9 @@ function App() {
       }
       captura.current = cap;
     } catch (e) {
+      // Defesa: se por algum caminho já havia uma captura viva (ex.: sessão anterior ainda ativa
+      // quando `sessaoIniciar` recusa), fecha o microfone antes de descartar a referência.
+      void captura.current?.cancelar();
       captura.current = null;
       if (timer.current) clearInterval(timer.current);
       void window.aerolince.sessaoCancelar(); // limpa a sessão do main se ela chegou a abrir
@@ -133,7 +136,11 @@ function App() {
     await captura.current?.parar();
     captura.current = null;
     setFase('processando');
-    await window.aerolince.sessaoEncerrar();
+    const r = await window.aerolince.sessaoEncerrar();
+    // {ok:false,'Nenhum ditado em andamento.'} NÃO emite evento 'estado' e deixaria 'processando'
+    // travado para sempre. Só destrava se nenhum 'estado' tirou a fase de 'processando' — o erro
+    // real do pipeline já emitiu 'estado'('erro') (também retorna ok:false) e não deve ser sobrescrito.
+    if (!r.ok && faseRef.current === 'processando') setFase('idle');
   }
 
   // Esc numa sessão segmentada: descarta tudo (sem consolidar) e volta ao repouso.
@@ -214,13 +221,19 @@ function App() {
       setFase(nova as Fase);
       if (nova === 'ok') {
         setAviso('');
-        setTimeout(() => setFase('idle'), 1800);
+        // Guardado por fase: uma sessão nova iniciada dentro de 1,8 s NÃO pode ser revertida a
+        // 'idle' por este timeout velho — senão o botão mentiria 'idle' com o microfone vivo.
+        setTimeout(() => {
+          if (faseRef.current === 'ok') setFase('idle');
+        }, 1800);
       } else if (nova === 'erro') {
-        // Nunca ficar travado: mostra o motivo e volta ao normal
+        // Nunca ficar travado: mostra o motivo e volta ao normal (guardado pela fase que reverte).
         setAviso(msg?.includes('áudio') || msg?.includes('entendi') ? 'sem áudio' : 'erro');
         setTimeout(() => {
-          setFase('idle');
-          setAviso('');
+          if (faseRef.current === 'erro') {
+            setFase('idle');
+            setAviso('');
+          }
         }, 3500);
       } else {
         setAviso('');
