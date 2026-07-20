@@ -1,14 +1,14 @@
 # Estado do projeto — ponto de retomada
 
-_Atualizado ao fim do dia 18/07/2026. Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
+_Atualizado em 20/07/2026, após o merge da Fase A de contenção. Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
 
-## ⏩ Comece por aqui amanhã
+## ⏩ Comece por aqui
 
-1. **Recolocar as chaves de API** (foram perdidas hoje numa migração com bug, já corrigido).
-   Abra o app (`laudo-app`) → ícone "A" na barra de menu → **Configurações → Chaves de API**,
-   cole ANTHROPIC e OPENAI, Salvar. Ou peça ao Claude para gravar via clipboard.
-2. **Testar ao vivo o que foi construído hoje** (lista em "Pendências de teste" abaixo).
-3. Escolher a próxima frente em "Backlog priorizado".
+1. **Próxima frente aceita: áudio segmentado** (pedal + VAD + spool) — proposta em
+   `docs/PROPOSTA-ARQUITETURA-AUDIO-RESILIENTE-2026-07-19.md`. Fazer o plano SDD e executar
+   em branch nova.
+2. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC
+   (itens finais de "Pendências de teste").
 
 ## O que o produto faz (funcionando)
 
@@ -16,7 +16,10 @@ Radiologista dita um comando curto → o app seleciona a máscara do próprio m�
 aplica os achados, devolve o laudo pronto no clipboard, exibe em janela editável e salva.
 Fluxo validado ponta a ponta com voz real. Custo ~R$ 0,02–0,09/laudo. Latência 1–6 s.
 
-**Fase atual:** fim da Fase 1 (app MVP). Falta o gate de campo (colar no RIS real + aceitação em plantão).
+**Fase atual:** Fase 1 (app MVP) + **Fase A de contenção da auditoria concluída e mergeada em
+20/07/2026** (`main` em `19d6a0b`) — os 6 P0s da auditoria de 18/07 fechados
+(`docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`). Falta o gate de campo (colar no RIS real +
+aceitação em plantão).
 
 ## Como rodar
 
@@ -34,7 +37,7 @@ npm run eval                  # golden set (13 casos) — acurácia de seleção
 npm run dev                   # app em dev (hot reload)
 npm run build:app             # compila renderer/main/preload
 npm run dist                  # gera instaladores (DMG + NSIS) em release/
-npm test                      # 27 testes (vitest)
+npm test                      # 81 testes (vitest)
 npm run typecheck
 
 # Curadoria da biblioteca (rodar quando entrarem laudos novos no acervo):
@@ -74,9 +77,34 @@ laudos reais e validadas pelo Paulinho, motor de patches (custo 36× menor), cam
 botão flutuante/refino por voz/histórico/configurações/onboarding/tray/tema dark+glass/loop de feedback,
 identidade visual D1.3, instaladores Mac+Windows.
 
+## O que foi construído em 19–20/07 (Fase A de contenção — mergeada)
+
+Executada via subagentes com review por task + review final adversarial (18 commits, ledger em
+`.superpowers/sdd/progress.md`):
+
+- **Gate de confiança (SAFE-01)**: confiança baixa nunca gera; média pede confirmação com
+  candidatos locais (`rankMasks`, sem tocar nos prompts) — painel no app, pergunta no terminal
+  na CLI; erro sempre visível (janela aparece no catch).
+- **Ditado sanitizado antes de QUALQUER LLM (PRIV-02)**: `sanitizeComando` no app, na CLI e em
+  `laudo caso`/`laudo eval` (inclusive antes de persistir no golden set versionado); datas viram
+  aviso, não remoção (conteúdo clínico); avisos propagados até a UI/terminal.
+- **Validador determinístico do laudo (P0-04)**: nenhum marcador `<!-- -->`/`@@` sobrevive;
+  placeholder de anonimização gera aviso; ids de patch normalizados p/ ASCII.
+- **Áudio nunca toca o disco no app (PRIV-01)**: buffer → `toFile` → API, limite de 24 MB com
+  erro acionável. (CLI de dev ainda grava `.wav` local, fora do git — documentado.)
+- **Config atômica (CONFIG-01)**: valida antes de salvar, backup `.bak`, escrita atômica,
+  recuperação de corrupção sem nunca impedir o boot; `schemaVersion: 1`.
+- **Cofre honesto (SECRET-01)**: salvar exige cofre disponível; botão **Testar** valida a chave
+  no provedor (com guarda de corrida); status ok/inválida/ausente na UI e no onboarding.
+- **Textos honestos (PRIV-03)**: onboarding "Voz na nuvem, laudo no seu computador";
+  `docs/privacidade.md` e CLAUDE.md reescritos e escopados ao app.
+
+Verificação manual feita em 20/07 (chaves + Testar, painel de confirmação, config corrompida,
+`/tmp` sem áudio): tudo ok.
+
 ## Pendências de teste (o médico precisa validar)
 
-- [ ] Recolocar chaves na tela de Configurações e gerar um laudo
+- [x] Recolocar chaves na tela de Configurações e gerar um laudo (20/07, com botão Testar)
 - [ ] **Sair** pelo menu da bandeja (era o "como fecho")
 - [ ] Arrastar o balão (clique = ditar, arraste = mover) e conferir que a posição persiste
 - [ ] Ditar em silêncio → ver o aviso "sem áudio" e o balão voltar ao normal
@@ -88,6 +116,10 @@ identidade visual D1.3, instaladores Mac+Windows.
 
 ## Backlog priorizado (próximas frentes)
 
+0. **Áudio segmentado (aceito em 19/07)** — pedal + VAD + spool para gravações longas de plantão
+   (custo, resiliência a falha de gravação): `docs/PROPOSTA-ARQUITETURA-AUDIO-RESILIENTE-2026-07-19.md`.
+   Itens da Fase B da auditoria (STATE-01 estado canônico do laudo, SAFE-02, QA-01 golden set)
+   entram no planejamento junto.
 1. **Aprendizado do loop de feedback** — hoje o app só COLETA a versão editada (sidecar:
    `laudoGerado` vs `laudoFinalEditado`). Falta o passo que transforma isso em ajuste das
    Regras/Frasário (ex.: comando `laudo aprender-feedback` que lê os diffs e sugere edições).
