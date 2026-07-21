@@ -1,14 +1,14 @@
 # Estado do projeto — ponto de retomada
 
-_Atualizado em 20/07/2026, após o merge da Fase A de contenção. Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
+_Atualizado em 20/07/2026, após o merge do áudio segmentado + ajustes de UX. Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
 
 ## ⏩ Comece por aqui
 
-1. **Próxima frente aceita: áudio segmentado** (pedal + VAD + spool) — proposta em
-   `docs/PROPOSTA-ARQUITETURA-AUDIO-RESILIENTE-2026-07-19.md`. Fazer o plano SDD e executar
-   em branch nova.
-2. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC
-   (itens finais de "Pendências de teste").
+1. **Próxima frente: Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02
+   (patch JSON estruturado), QA-01 (golden set clínico) — fazer plano SDD próprio (decisão de
+   20/07; definições em `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
+2. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
+   **validar o ditado segmentado com fala real** (itens novos em "Pendências de teste").
 
 ## O que o produto faz (funcionando)
 
@@ -16,10 +16,10 @@ Radiologista dita um comando curto → o app seleciona a máscara do próprio m�
 aplica os achados, devolve o laudo pronto no clipboard, exibe em janela editável e salva.
 Fluxo validado ponta a ponta com voz real. Custo ~R$ 0,02–0,09/laudo. Latência 1–6 s.
 
-**Fase atual:** Fase 1 (app MVP) + **Fase A de contenção da auditoria concluída e mergeada em
-20/07/2026** (`main` em `19d6a0b`) — os 6 P0s da auditoria de 18/07 fechados
+**Fase atual:** Fase 1 (app MVP) + Fase A de contenção mergeada + **áudio segmentado e ajustes
+de UX mergeados em 20/07/2026** (`main` em `ef58651`). Os 6 P0s da auditoria de 18/07 fechados
 (`docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`). Falta o gate de campo (colar no RIS real +
-aceitação em plantão).
+aceitação em plantão + fala real no ditado segmentado).
 
 ## Como rodar
 
@@ -37,7 +37,7 @@ npm run eval                  # golden set (13 casos) — acurácia de seleção
 npm run dev                   # app em dev (hot reload)
 npm run build:app             # compila renderer/main/preload
 npm run dist                  # gera instaladores (DMG + NSIS) em release/
-npm test                      # 81 testes (vitest)
+npm test                      # 149 testes (vitest)
 npm run typecheck
 
 # Curadoria da biblioteca (rodar quando entrarem laudos novos no acervo):
@@ -53,6 +53,7 @@ npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"   # sanitiza PDFs (loc
 
 - `src/core/` — Node puro, sem Electron, testável. **Não depende do app.**
   - `anonymizer/` — sanitização local (obrigatória antes de qualquer upload)
+  - `audio/` — pcm/wav/consolidação/cripto do spool (puro; `pcm.ts` é o único módulo que o renderer importa)
   - `masks/` — schema.ts (frontmatter zod), library.ts (catálogo), **matcher.ts** (seleção local + contraste determinístico)
   - `stt/` — OpenAI gpt-4o-transcribe
   - `llm/anthropic.ts` — wrapper Claude (aceita baseURL p/ Kimi; cache; custo)
@@ -61,7 +62,7 @@ npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"   # sanitiza PDFs (loc
   - `config/schema.ts` — Config (pastas, ui{tema,glass,opacidade,atalho}, macros) + loadConfig/saveConfig
   - `output/` — clipboard + salvar + sidecar
 - `src/cli/index.ts` — CLI (texto/gravar/caso/eval/destilar/aprender)
-- `src/main/` — Electron: index.ts (tray, janelas, IPC, tema), pipeline.ts (áudio/texto→laudo + refino/desfazer), secrets.ts (cofre safeStorage), historico.ts (lista + loop de feedback)
+- `src/main/` — Electron: index.ts (tray, janelas, IPC, tema), pipeline.ts (áudio/texto→laudo + refino/desfazer), secrets.ts (cofre safeStorage), historico.ts (lista + apagar/retenção + loop de feedback), **audio/** (spool cifrado, sessão segmentada, recovery no boot)
 - `src/preload/index.ts` — ponte tipada (window.aerolince)
 - `src/renderer/` — float/ (botão), result/ (laudo+refino), settings/, historico/, onboarding/, shared/ (brand.css tokens, glass.ts, window.css, SimboloA.tsx)
 
@@ -102,6 +103,32 @@ Executada via subagentes com review por task + review final adversarial (18 comm
 Verificação manual feita em 20/07 (chaves + Testar, painel de confirmação, config corrompida,
 `/tmp` sem áudio): tudo ok.
 
+## O que foi construído em 20/07 (áudio segmentado + ajustes de UX — mergeados)
+
+Executado via subagentes (Opus/Sonnet/Haiku) orquestrados em Fable, com review por task +
+review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-20-audio-segmentado.md`):
+
+- **Captura segmentada com VAD local, sem pedal/atalho**: clique no balão abre a escuta;
+  Silero VAD (`@ricky0123/vad-web`, assets 100% locais via `scripts/copiar-assets-vad.mjs`,
+  zero CDN) registra só a fala — pausa de ~1,2 s fecha o trecho (configurável em
+  Configurações → Ditado), voltar a falar reabre; novo clique consolida os trechos num WAV
+  só-fala (gaps de 200 ms) → **1 chamada** `gpt-4o-transcribe` → pipeline intocado. Fala
+  contínua é fatiada em ≤60 s; consolidado >24 MB particiona com prompt encadeado.
+- **Spool cifrado + recovery**: segmentos AES-256-GCM no disco (chave de sessão protegida
+  pelo cofre do SO), apagados após a transcrição; crash → diálogo "Transcrever agora /
+  Descartar" no próximo boot (expira em 48 h); sem cofre ou falha de disco → degrada para
+  só-memória com aviso honesto no tooltip.
+- **Custo do STT entra no custo exibido** (usage por token; fallback USD/min) + telemetria da
+  sessão no sidecar (`capturedMs`/`speechMs`/`speechRatio`/`uploadedBytes`).
+- **Fallback clínico**: `stt.captura: 'classica'` preserva o fluxo MediaRecorder antigo.
+- **Ajustes de UX**: aviso de erro do balão legível com motivo real ("sem áudio"/"sem
+  microfone"/"sem chave", 5 s, nunca fica preso na exclamação); histórico com apagar
+  individual/todos (confirmação nativa; path traversal fechado) e retenção configurável
+  (`historico.retencaoDias`, 0 = sempre; limpeza no boot); balão só o círculo (sem borda,
+  fundo 100% transparente), transparência mínima 5% e ajuste por scroll no próprio balão.
+- Textos de privacidade fiéis ao fluxo novo (spool cifrado com retenção zero pós-transcrição,
+  expiração na próxima abertura, exceção da CLI-dev). Suíte: 81 → **149 testes**.
+
 ## Pendências de teste (o médico precisa validar)
 
 - [x] Recolocar chaves na tela de Configurações e gerar um laudo (20/07, com botão Testar)
@@ -111,15 +138,29 @@ Verificação manual feita em 20/07 (chaves + Testar, painel de confirmação, c
 - [ ] Buscar um achado no histórico; copiar → janela fecha
 - [ ] Criar um atalho ("abdome feminino padrão com colecistectomia") e acioná-lo pela bandeja
 - [ ] Alternar tema claro/escuro/vidro nas configurações
+- [x] Balão sem borda/quadrado, transparência 5% e scroll (20/07, visual validado)
+- [ ] **Ditado segmentado com fala real** (mic físico): falar → pausar ~10 s (balão "ouvindo",
+      sem registrar) → falar → clique → 1 laudo das duas frases; sidecar com `audio.speechMs`
+      ≪ `capturedMs` e `custoUSD` incluindo o STT
+- [ ] Matar o app no meio do ditado (`kill -9`) → reabrir → "Transcrever agora" → laudo;
+      `<userData>/spool/` vazio ao final
+- [ ] Configurações → Captura de voz "Clássica" → fluxo antigo funciona
+- [ ] Empacotado real (`npm run build:app && npx electron-builder --dir`) → ditar sob asar,
+      devtools sem nenhum request de CDN
 - [ ] **Colar um laudo no RIS real da clínica** (Word + campo simples também) — teste-chave que falta
 - [ ] Plantão inteiro de TC → medir aceitação (meta ≥80% "usaria com edição mínima")
 
 ## Backlog priorizado (próximas frentes)
 
-0. **Áudio segmentado (aceito em 19/07)** — pedal + VAD + spool para gravações longas de plantão
-   (custo, resiliência a falha de gravação): `docs/PROPOSTA-ARQUITETURA-AUDIO-RESILIENTE-2026-07-19.md`.
-   Itens da Fase B da auditoria (STATE-01 estado canônico do laudo, SAFE-02, QA-01 golden set)
-   entram no planejamento junto.
+0. **Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02 (patch JSON
+   estruturado), QA-01 (golden set clínico reprodutível). Plano SDD próprio (decisão de 20/07).
+0b. **Dívida técnica triada no review final do áudio** (pequena, entra quando tocar os arquivos):
+   `app.requestSingleInstanceLock` (2ª instância confunde o recovery do spool); podar os `.wasm`
+   não usados da cópia de assets (~53 MB; só o simd-threaded é carregado); guard `maxBytes≤44`
+   em `particionarPorBytes`; testes que faltam (manifest zod-inválido no spool, `promptExtra`
+   e2e no provider, "confirmação negada ⇒ nada apagado" no histórico); nota: retenção do
+   histórico conta da **última edição** (mtime), não da geração; A/B de `gpt-4o-mini-transcribe`
+   em shadow mode (proposta, Fase 2); handler de erro no middleware dev dos assets do VAD.
 1. **Aprendizado do loop de feedback** — hoje o app só COLETA a versão editada (sidecar:
    `laudoGerado` vs `laudoFinalEditado`). Falta o passo que transforma isso em ajuste das
    Regras/Frasário (ex.: comando `laudo aprender-feedback` que lê os diffs e sugere edições).
