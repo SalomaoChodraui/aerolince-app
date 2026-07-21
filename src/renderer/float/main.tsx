@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
+import './float.css';
 import { SimboloA } from '../shared/SimboloA.js';
 import type { RendererConfig } from '../shared/types.js';
 import { iniciarCapturaVad, type CapturaVad } from './captura-vad.js';

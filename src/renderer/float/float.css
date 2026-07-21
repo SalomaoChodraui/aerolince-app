@@ -1,0 +1,7 @@
+/* Importado DEPOIS do brand.css (ordem dos imports em main.tsx): restaura a transparência
+   da janela do balão — o body{background:var(--bg)} do brand.css venceria o <style> do
+   index.html e pintaria um quadrado atrás do círculo. */
+html,
+body {
+  background: transparent;
+}
