@@ -128,6 +128,12 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
   fundo 100% transparente), transparência mínima 5% e ajuste por scroll no próprio balão.
 - Textos de privacidade fiéis ao fluxo novo (spool cifrado com retenção zero pós-transcrição,
   expiração na próxima abertura, exceção da CLI-dev). Suíte: 81 → **149 testes**.
+- **Fixes de campo pós-instalador (20/07 à noite)**: script `dist` respeitava a CLI e gerava
+  NSIS arm64 em host Apple Silicon (agora usa os targets do yml → x64); ícones do tray não
+  entravam no pacote (ícone invisível no instalado — `files` do electron-builder corrigido);
+  userData herdado da instalação de 18/07 diagnosticado (onboarding não abria e `masksDir`
+  apontava para cópia com 1 máscara-exemplo → "não tive certeza" sempre; config do app
+  instalado agora aponta para a biblioteca real).
 
 ## Pendências de teste (o médico precisa validar)
 
@@ -139,14 +145,15 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
 - [ ] Criar um atalho ("abdome feminino padrão com colecistectomia") e acioná-lo pela bandeja
 - [ ] Alternar tema claro/escuro/vidro nas configurações
 - [x] Balão sem borda/quadrado, transparência 5% e scroll (20/07, visual validado)
-- [ ] **Ditado segmentado com fala real** (mic físico): falar → pausar ~10 s (balão "ouvindo",
-      sem registrar) → falar → clique → 1 laudo das duas frases; sidecar com `audio.speechMs`
-      ≪ `capturedMs` e `custoUSD` incluindo o STT
+- [x] **Ditado real no app EMPACOTADO** (20/07, instalador DMG): fala real → VAD → transcrição →
+      seleção certa entre as 19 máscaras → laudo correto. Valida captura segmentada + asar +
+      assets locais de ponta a ponta.
+- [ ] Cenários restantes do ditado segmentado: pausar ~10 s no meio (balão "ouvindo", sem
+      registrar) → 1 laudo das duas frases; sidecar com `audio.speechMs` ≪ `capturedMs` e
+      `custoUSD` incluindo o STT
 - [ ] Matar o app no meio do ditado (`kill -9`) → reabrir → "Transcrever agora" → laudo;
       `<userData>/spool/` vazio ao final
 - [ ] Configurações → Captura de voz "Clássica" → fluxo antigo funciona
-- [ ] Empacotado real (`npm run build:app && npx electron-builder --dir`) → ditar sob asar,
-      devtools sem nenhum request de CDN
 - [ ] **Colar um laudo no RIS real da clínica** (Word + campo simples também) — teste-chave que falta
 - [ ] Plantão inteiro de TC → medir aceitação (meta ≥80% "usaria com edição mínima")
 
