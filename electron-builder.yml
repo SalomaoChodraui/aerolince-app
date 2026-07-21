@@ -5,6 +5,9 @@ directories:
 files:
   - out/**
   - package.json
+  - build/trayTemplate.png
+  - build/trayTemplate@2x.png
+  - build/icon.png
 extraResources:
   - perfis/**
   - masks-exemplo/**
