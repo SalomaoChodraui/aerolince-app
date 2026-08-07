@@ -22,6 +22,13 @@ const REGRAS = `<!-- RASCUNHO gerado automaticamente -->
 ## Frasário patológico
 nada ainda.`;
 
+const SINTESE = `<!-- RASCUNHO gerado automaticamente -->
+
+## Síntese da conclusão — tc-abdome-total
+
+- corpo: Aorta de paredes irregulares, com placas ateromatosas calcificadas.
+  conclusão: Ateromatose aórtica.`;
+
 describe('listarRascunhos', () => {
   let masksDir: string;
 
@@ -53,14 +60,26 @@ describe('listarRascunhos', () => {
     expect(listarRascunhos(masksDir)).toEqual([{ arquivo: 'tc-cranio.md', tipo: 'mascara', alvo: 'tc-cranio' }]);
   });
 
-  it('lista os dois tipos juntos, ordenados', () => {
+  it('classifica sintese-<id>.md como tipo sintese com alvo <id>', () => {
+    const dir = join(masksDir, '_rascunhos');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'sintese-tc-abdome-total.md'), SINTESE);
+
+    expect(listarRascunhos(masksDir)).toEqual([
+      { arquivo: 'sintese-tc-abdome-total.md', tipo: 'sintese', alvo: 'tc-abdome-total' },
+    ]);
+  });
+
+  it('lista os três tipos juntos, ordenados', () => {
     const dir = join(masksDir, '_rascunhos');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'tc-cranio.md'), MASCARA_VALIDA);
     writeFileSync(join(dir, 'regras-tc-abdome.md'), REGRAS);
+    writeFileSync(join(dir, 'sintese-tc-abdome.md'), SINTESE);
 
     expect(listarRascunhos(masksDir)).toEqual([
       { arquivo: 'regras-tc-abdome.md', tipo: 'regras', alvo: 'tc-abdome' },
+      { arquivo: 'sintese-tc-abdome.md', tipo: 'sintese', alvo: 'tc-abdome' },
       { arquivo: 'tc-cranio.md', tipo: 'mascara', alvo: 'tc-cranio' },
     ]);
   });
@@ -97,6 +116,35 @@ describe('aplicarRascunho', () => {
     expect(r.destino).toBe(join(masksDir, 'regras', 'tc-cranio.md'));
     expect(readFileSync(r.destino, 'utf8')).toBe(REGRAS);
     expect(existsSync(join(masksDir, '_rascunhos', 'regras-tc-cranio.md'))).toBe(false);
+  });
+
+  it('síntese: promove para <masksDir>/regras/sintese-<id>.md e remove o rascunho', () => {
+    writeFileSync(join(masksDir, '_rascunhos', 'sintese-tc-abdome-total.md'), SINTESE);
+
+    const r = aplicarRascunho(masksDir, 'sintese-tc-abdome-total.md');
+
+    expect(r.destino).toBe(join(masksDir, 'regras', 'sintese-tc-abdome-total.md'));
+    expect(r.backup).toBeUndefined();
+    expect(readFileSync(r.destino, 'utf8')).toBe(SINTESE);
+    expect(existsSync(join(masksDir, '_rascunhos', 'sintese-tc-abdome-total.md'))).toBe(false);
+  });
+
+  it('síntese: destino já existe (tabela manual do médico) → grava backup .bak antes de sobrescrever', () => {
+    mkdirSync(join(masksDir, 'regras'), { recursive: true });
+    writeFileSync(join(masksDir, 'regras', 'sintese-tc-abdome-total.md'), 'TABELA MANUAL, curadoria do médico.');
+    writeFileSync(join(masksDir, '_rascunhos', 'sintese-tc-abdome-total.md'), SINTESE);
+
+    const r = aplicarRascunho(masksDir, 'sintese-tc-abdome-total.md');
+
+    expect(r.backup).toBe(join(masksDir, 'regras', 'sintese-tc-abdome-total.md.bak'));
+    expect(readFileSync(r.backup!, 'utf8')).toBe('TABELA MANUAL, curadoria do médico.');
+    expect(readFileSync(r.destino, 'utf8')).toBe(SINTESE);
+  });
+
+  it('síntese: frontmatter não é validado (markdown livre, como regras)', () => {
+    writeFileSync(join(masksDir, '_rascunhos', 'sintese-tc-cranio.md'), 'texto livre, sem frontmatter algum.');
+    const r = aplicarRascunho(masksDir, 'sintese-tc-cranio.md');
+    expect(readFileSync(r.destino, 'utf8')).toBe('texto livre, sem frontmatter algum.');
   });
 
   it('destino já existe → grava backup .bak com o conteúdo anterior antes de sobrescrever', () => {
@@ -227,6 +275,12 @@ describe('proteção contra path traversal (CRITICAL)', () => {
     expect(() => validarNomeRascunho('a/b.md')).toThrow();
     expect(() => validarNomeRascunho('a\\b.md')).toThrow();
     expect(() => validarNomeRascunho('regras-tc-cranio.md')).not.toThrow();
+    expect(() => validarNomeRascunho('sintese-tc-abdome-total.md')).not.toThrow();
+  });
+
+  it('rascunho de síntese com traversal no nome ("sintese-../x.md") continua bloqueado', () => {
+    expect(() => aplicarRascunho(masksDir, 'sintese-../x.md')).toThrow();
+    expect(existsSync(fora)).toBe(true);
   });
 });
 

@@ -11,11 +11,12 @@ import { MaskFrontmatterSchema } from '../masks/schema.js';
 
 export interface Rascunho {
   arquivo: string;
-  tipo: 'mascara' | 'regras';
+  tipo: 'mascara' | 'regras' | 'sintese';
   alvo: string;
 }
 
 const REGRAS_RE = /^regras-(.+)\.md$/;
+const SINTESE_RE = /^sintese-(.+)\.md$/;
 
 function rascunhosDir(masksDir: string): string {
   return join(masksDir, '_rascunhos');
@@ -61,9 +62,12 @@ export function lerRascunho(masksDir: string, arquivo: string): string {
   return readFileSync(origem, 'utf8');
 }
 
-function classificar(arquivo: string): { tipo: 'mascara' | 'regras'; alvo: string } {
-  const m = REGRAS_RE.exec(arquivo);
-  return m ? { tipo: 'regras', alvo: m[1]! } : { tipo: 'mascara', alvo: arquivo.replace(/\.md$/, '') };
+function classificar(arquivo: string): { tipo: Rascunho['tipo']; alvo: string } {
+  const r = REGRAS_RE.exec(arquivo);
+  if (r) return { tipo: 'regras', alvo: r[1]! };
+  const s = SINTESE_RE.exec(arquivo);
+  if (s) return { tipo: 'sintese', alvo: s[1]! };
+  return { tipo: 'mascara', alvo: arquivo.replace(/\.md$/, '') };
 }
 
 /** Lista os rascunhos pendentes (`<masksDir>/_rascunhos/*.md`), ordenados por nome de arquivo. */
@@ -76,15 +80,21 @@ export function listarRascunhos(masksDir: string): Rascunho[] {
     .map((arquivo) => ({ arquivo, ...classificar(arquivo) }));
 }
 
-function destinoDe(masksDir: string, tipo: 'mascara' | 'regras', alvo: string): string {
-  return tipo === 'regras' ? join(masksDir, 'regras', `${alvo}.md`) : join(masksDir, `${alvo}.md`);
+function destinoDe(masksDir: string, tipo: Rascunho['tipo'], alvo: string): string {
+  if (tipo === 'regras') return join(masksDir, 'regras', `${alvo}.md`);
+  // Síntese mora AO LADO das regras (mesma pasta `regras/`), com o prefixo no nome —
+  // `loadRegras` (core/contexto.ts) a carrega em camadas por esse caminho exato.
+  if (tipo === 'sintese') return join(masksDir, 'regras', `sintese-${alvo}.md`);
+  return join(masksDir, `${alvo}.md`);
 }
 
 /**
  * Promove um rascunho para a biblioteca. Máscara → `<masksDir>/<id>.md`;
- * regras → `<masksDir>/regras/<id>.md`. Se o destino já existir, é copiado
- * antes para `<destino>.bak`. Rascunho de máscara com frontmatter inválido
- * (zod) lança erro claro e NÃO toca o destino nem o rascunho.
+ * regras → `<masksDir>/regras/<id>.md`; síntese → `<masksDir>/regras/sintese-<id>.md`.
+ * Se o destino já existir, é copiado antes para `<destino>.bak`. Rascunho de
+ * máscara com frontmatter inválido (zod) lança erro claro e NÃO toca o destino
+ * nem o rascunho. Rascunho de síntese/regras é markdown livre — sem validação
+ * de frontmatter.
  */
 export function aplicarRascunho(masksDir: string, arquivo: string): { destino: string; backup?: string } {
   validarNomeRascunho(arquivo);
