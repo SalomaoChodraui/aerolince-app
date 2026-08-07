@@ -148,11 +148,21 @@ function App() {
             </p>
             <div className="onb-motor">
               <label>
-                <input type="radio" checked={provider === 'anthropic'} onChange={() => trocarMotor('anthropic')} />
+                <input
+                  type="radio"
+                  name="motor"
+                  checked={provider === 'anthropic'}
+                  onChange={() => trocarMotor('anthropic')}
+                />
                 OpenAI + Anthropic (recomendado)
               </label>
               <label>
-                <input type="radio" checked={provider === 'openai'} onChange={() => trocarMotor('openai')} />
+                <input
+                  type="radio"
+                  name="motor"
+                  checked={provider === 'openai'}
+                  onChange={() => trocarMotor('openai')}
+                />
                 Só OpenAI (uma chave para tudo)
               </label>
             </div>
