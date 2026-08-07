@@ -54,6 +54,18 @@ export const ConfigSchema = z.object({
   historico: z
     .object({ retencaoDias: z.number().int().min(0).max(3650).default(0) })
     .prefault({}),
+  // Progresso do wizard de onboarding (Bloco 3): `versao` identifica o conjunto de
+  // passos em uso — o renderer descarta um `passo` salvo sob uma `versao` antiga
+  // (a ordem/quantidade de passos mudou) em vez de reabrir num índice que já
+  // significa outra coisa. `acervoImportado` é só informativo (o passo de
+  // importação nunca é bloqueante).
+  onboarding: z
+    .object({
+      versao: z.number().default(1),
+      passo: z.number().default(0),
+      acervoImportado: z.boolean().default(false),
+    })
+    .prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -183,8 +195,8 @@ export function saveConfig(appRoot: string, patch: Record<string, unknown>): Con
   const file = join(appRoot, CONFIG_FILE);
   const atual = lerOverlayBruto(file);
   const merged: Record<string, unknown> = { ...atual, ...patch, schemaVersion: 1 };
-  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt/historico)
-  for (const chave of ['ui', 'llm', 'stt', 'historico'] as const) {
+  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt/historico/onboarding)
+  for (const chave of ['ui', 'llm', 'stt', 'historico', 'onboarding'] as const) {
     if (patch[chave]) merged[chave] = { ...((atual[chave] as object | undefined) ?? {}), ...(patch[chave] as object) };
   }
   const config = mesclar(defaultsDe(appRoot), merged); // lança se o patch for inválido — arquivo intacto

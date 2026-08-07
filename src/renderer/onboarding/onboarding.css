@@ -67,6 +67,23 @@ kbd {
   gap: 6px;
   align-items: center;
 }
+.onb-importar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.onb-importar-ok {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--oxido);
+}
+.onb-importar-acoes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
 .onb-nav {
   margin-top: auto;
   display: flex;

@@ -116,6 +116,40 @@ describe('saveConfig atômico', () => {
   });
 });
 
+describe('progresso do onboarding (config)', () => {
+  it('sem arquivo → defaults (passo 0, não importado, versão 1)', () => {
+    const c = loadConfig(root);
+    expect(c.onboarding).toEqual({ versao: 1, passo: 0, acervoImportado: false });
+  });
+
+  it('config antiga sem o bloco onboarding ganha defaults', () => {
+    writeFileSync(
+      join(root, 'laudo.config.json'),
+      JSON.stringify({ schemaVersion: 1, ui: { tema: 'escuro' } }),
+      'utf8',
+    );
+    const c = loadConfig(root);
+    expect(c.onboarding).toEqual({ versao: 1, passo: 0, acervoImportado: false });
+  });
+
+  it('merge raso de onboarding preserva campos não enviados', () => {
+    saveConfig(root, { onboarding: { passo: 3 } });
+    saveConfig(root, { onboarding: { acervoImportado: true } });
+    const c = loadConfig(root);
+    expect(c.onboarding.passo).toBe(3);
+    expect(c.onboarding.acervoImportado).toBe(true);
+    expect(c.onboarding.versao).toBe(1);
+  });
+
+  it('merge raso de onboarding preserva o resto ao salvar outra seção', () => {
+    saveConfig(root, { onboarding: { passo: 5 } });
+    saveConfig(root, { ui: { tema: 'escuro' } });
+    const c = loadConfig(root);
+    expect(c.onboarding.passo).toBe(5);
+    expect(c.ui.tema).toBe('escuro');
+  });
+});
+
 describe('retenção do histórico (config)', () => {
   it('config antiga sem o bloco historico ganha default retencaoDias 0', () => {
     writeFileSync(

@@ -24,6 +24,12 @@ export interface HistoricoConfig {
   retencaoDias: number;
 }
 
+export interface OnboardingConfig {
+  versao: number;
+  passo: number;
+  acervoImportado: boolean;
+}
+
 export interface LlmConfig {
   provider: 'anthropic' | 'openai';
   selectionModel: string;
@@ -44,4 +50,5 @@ export interface RendererConfig {
   stt: SttConfig;
   llm: LlmConfig;
   historico: HistoricoConfig;
+  onboarding: OnboardingConfig;
 }
