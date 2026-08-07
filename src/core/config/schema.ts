@@ -35,6 +35,10 @@ export const ConfigSchema = z.object({
     glossario: z.array(z.string()).default([]),
     captura: z.enum(['segmentada', 'classica']).default('segmentada'), // ditado do balão; refino por voz segue clássico
     pausaMs: z.number().int().min(400).max(5000).default(1200), // silêncio que fecha um trecho de fala
+    // Sensibilidade do VAD (captura segmentada): alta capta voz baixa/mic distante
+    // (pode pegar ruído); baixa exige fala mais clara (ambiente ruidoso). Ver
+    // `PARAMETROS_POR_SENSIBILIDADE` em src/renderer/float/vad-sensibilidade.ts.
+    sensibilidadeVad: z.enum(['alta', 'media', 'baixa']).default('media'),
   }),
   llm: z.object({
     // Motor de geração: 'anthropic' (padrão — Claude gera, OpenAI transcreve) ou

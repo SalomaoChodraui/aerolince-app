@@ -13,11 +13,14 @@ export interface UIConfig {
   balaoPos: { x: number; y: number } | null;
 }
 
+export type SensibilidadeVad = 'alta' | 'media' | 'baixa';
+
 export interface SttConfig {
   model: string;
   glossario: string[];
   captura: 'segmentada' | 'classica';
   pausaMs: number;
+  sensibilidadeVad: SensibilidadeVad;
 }
 
 export interface HistoricoConfig {

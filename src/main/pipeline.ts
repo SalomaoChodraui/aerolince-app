@@ -8,6 +8,7 @@ import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
 import { duracaoMs } from '../core/audio/pcm.js';
 import { Config, loadConfig } from '../core/config/schema.js';
 import { loadProfile, loadRegras } from '../core/contexto.js';
+import { avisosDeCaptura, contarPalavras } from '../core/engine/avisos-captura.js';
 import { stripMarkers } from '../core/engine/diff.js';
 import { generate, refine, selectMask } from '../core/engine/engine.js';
 import { estimateCostUSD } from '../core/llm/anthropic.js';
@@ -172,6 +173,16 @@ export async function processarAudioSegmentado(
       segmentosStt: wavs.length,
       custoSttUSD: t.custoSttUSD,
     };
+    // Reavalia `avisosDeCaptura` agora COM a telemetria de áudio (regra b —
+    // só existe neste fluxo). A regra (a) recalculada aqui é idêntica à já
+    // anexada em `gerarLaudo` (mesmo transcript/blocosAlterados) — `dedupAvisos`
+    // descarta a repetição, sobrando só o aviso novo de fala não captada.
+    const avisosComAudio = avisosDeCaptura({
+      palavrasDitadas: contarPalavras(res.transcript),
+      blocosAlterados: res.blocosAlterados,
+      audio: res.audio,
+    });
+    res.avisos = dedupAvisos(res.avisos, avisosComAudio);
   }
   return res;
 }
@@ -291,6 +302,11 @@ async function gerarLaudo(
     custoSel === null || custoGer === null
       ? ['custo não estimado — o modelo configurado não está na tabela de preços']
       : [];
+  // Regra (a) de `avisosDeCaptura`: sem telemetria de áudio aqui (só existe no
+  // ditado segmentado, anexada depois em `processarAudioSegmentado`) — cobre
+  // igualmente processarTexto/processarAudio (clássico) e gerarComMascara, que
+  // passam todos por esta função.
+  const avisosCaptura = avisosDeCaptura({ palavrasDitadas: contarPalavras(transcript), blocosAlterados: gen.diff.changed });
 
   return {
     tipo: 'laudo',
@@ -300,7 +316,7 @@ async function gerarLaudo(
     maskNome: sel.mask.nome,
     confianca: sel.confianca,
     blocosAlterados: gen.diff.changed,
-    avisos: [...avisosSanitizacao, ...gen.avisos, ...avisosCusto],
+    avisos: [...avisosSanitizacao, ...avisosCaptura, ...gen.avisos, ...avisosCusto],
     tempos: {
       sttMs: Math.round(sttMs),
       selecaoMs: Math.round(sel.durationMs),

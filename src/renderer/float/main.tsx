@@ -105,6 +105,7 @@ function App() {
       timer.current = setInterval(() => setSegundos((s) => s + 1), 1000);
       const cap = await iniciarCapturaVad({
         pausaMs: config.stt.pausaMs,
+        sensibilidade: config.stt.sensibilidadeVad,
         aoFalar: () => {
           inicioFala.current = Date.now();
           setFase('falando');

@@ -1,5 +1,7 @@
 import { MicVAD } from '@ricky0123/vad-web';
 import { duracaoMs, fatiarPcm, float32ParaInt16, SAMPLE_RATE } from '../../core/audio/pcm.js';
+import type { SensibilidadeVad } from '../shared/types.js';
+import { PARAMETROS_POR_SENSIBILIDADE } from './vad-sensibilidade.js';
 
 // Fala contínua acima disto é fatiada antes de enviar: um único segmento >~2 min estoura o cap
 // de tamanho do IPC/main e seria recusado. 60 s viram segmentos contíguos na consolidação (sem
@@ -15,6 +17,7 @@ export interface CapturaVad {
 
 export interface OpcoesCaptura {
   pausaMs: number; // silêncio que fecha um trecho (config.stt.pausaMs)
+  sensibilidade: SensibilidadeVad; // config.stt.sensibilidadeVad — ver vad-sensibilidade.ts
   aoFalar(): void;
   aoSilenciar(): void;
   aoSegmento(pcm: Int16Array, durationMs: number): void;
@@ -25,13 +28,16 @@ export interface OpcoesCaptura {
 const BASE = import.meta.env.DEV ? '/vad/' : new URL('../vad/', location.href).toString();
 
 export async function iniciarCapturaVad(opts: OpcoesCaptura): Promise<CapturaVad> {
+  const params = PARAMETROS_POR_SENSIBILIDADE[opts.sensibilidade];
   const vad = await MicVAD.new({
     model: 'v5',
     baseAssetPath: BASE,
     onnxWASMBasePath: BASE,
     redemptionMs: opts.pausaMs, // silêncio que fecha o segmento
-    preSpeechPadMs: 800, // não corta a primeira sílaba (default da lib)
-    minSpeechMs: 400, // estalos/cliques não viram segmento
+    positiveSpeechThreshold: params.positiveSpeechThreshold,
+    negativeSpeechThreshold: params.negativeSpeechThreshold,
+    preSpeechPadMs: params.preSpeechPadMs, // não corta a primeira sílaba
+    minSpeechMs: params.minSpeechMs, // estalos/cliques não viram segmento
     submitUserSpeechOnPause: true, // parar() no meio de uma fala flusha o trecho via onSpeechEnd
     onSpeechStart: () => opts.aoFalar(),
     onVADMisfire: () => opts.aoSilenciar(),
