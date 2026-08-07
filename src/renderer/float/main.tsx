@@ -28,6 +28,33 @@ function rotuloDeErro(msg?: string): string {
   return 'erro';
 }
 
+// Timeout de segurança para `aguardarEnviosPendentes`: nunca trava o encerramento
+// para sempre por causa de um envio de segmento que não resolve.
+const TIMEOUT_ENVIOS_MS = 3000;
+
+/**
+ * Espera todas as promessas de envio de segmento ainda em voo (com timeout de
+ * segurança) — fecha a corrida entre o último segmento e `sessaoEncerrar` (canais
+ * IPC distintos, sem garantia de ordem). Se o timeout estourar, segue mesmo
+ * assim (com aviso no console): nunca trava o ditado por causa de telemetria de
+ * transporte.
+ */
+async function aguardarEnviosPendentes(envios: Promise<unknown>[]): Promise<void> {
+  if (envios.length === 0) return;
+  let estourou = true;
+  await Promise.race([
+    Promise.allSettled(envios).then(() => {
+      estourou = false;
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, TIMEOUT_ENVIOS_MS)),
+  ]);
+  if (estourou) {
+    console.warn(
+      `[aerolince] timeout de ${TIMEOUT_ENVIOS_MS}ms esperando ${envios.length} envio(s) de segmento — encerrando mesmo assim`,
+    );
+  }
+}
+
 function Icone({ fase }: { fase: Fase }) {
   // Sessão ativa e gravando clássico mostram o mesmo "parar" (clique encerra); o CSS diferencia.
   if (fase === 'gravando' || fase === 'ouvindo' || fase === 'falando') return <span className="parar" />;
@@ -55,6 +82,11 @@ function App() {
   // Recusas de segmento nesta sessão: some em silêncio hoje se não for contado e
   // repassado ao encerrar — o médico precisa saber que um trecho dito sumiu.
   const segmentosRecusados = useRef(0);
+  // Envios de segmento em voo (IPC 'sessao-segmento' ainda não resolvido). `sessao-segmento`
+  // e `sessao-encerrar` são canais IPC distintos, sem garantia de ordem — sem esperar por
+  // isto, o ÚLTIMO trecho dito (bem na hora de clicar para parar) pode chegar depois do
+  // encerramento e ser descartado. Ver `encerrarSessao`.
+  const enviosEmVoo = useRef<Promise<unknown>[]>([]);
   const semCofre = useRef(false);
   // Geração da sessão: cresce a cada início/encerramento/cancelamento. Evita microfone
   // aberto se o usuário encerrar/cancelar enquanto o VAD ainda carrega o modelo.
@@ -103,6 +135,7 @@ function App() {
       falaMs.current = 0;
       inicioFala.current = null;
       segmentosRecusados.current = 0;
+      enviosEmVoo.current = [];
       setFase('ouvindo');
       setSegundos(0);
       if (timer.current) clearInterval(timer.current);
@@ -122,13 +155,15 @@ function App() {
           falaMs.current += ms;
           // Não ignora a recusa: um segmento recusado (ex.: acima do cap) é contado e
           // repassado a `sessaoEncerrar` — vira aviso visível no resultado, em vez de
-          // sumir em silêncio.
-          void window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms).then((r) => {
+          // sumir em silêncio. A promessa fica em `enviosEmVoo` até resolver — ver
+          // `encerrarSessao`, que espera por todas antes de encerrar a sessão no main.
+          const envio = window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms).then((r) => {
             if (!r.ok) {
               segmentosRecusados.current++;
               console.warn('[aerolince] segmento recusado:', r.erro);
             }
           });
+          enviosEmVoo.current.push(envio);
         },
       });
       if (geracao.current !== gen) {
@@ -165,8 +200,13 @@ function App() {
   async function encerrarSessao() {
     geracao.current++; // invalida um VAD que ainda esteja carregando
     if (timer.current) clearInterval(timer.current);
-    await captura.current?.parar();
+    await captura.current?.parar(); // dispara o onSpeechEnd do trecho em andamento (síncrono)
     captura.current = null;
+    // Sem isto, o ÚLTIMO segmento (disparado por `parar()` acima) pode ainda estar em voo
+    // quando `sessaoEncerrar` chega ao main — dois canais IPC distintos, sem ordem garantida.
+    const envios = enviosEmVoo.current;
+    enviosEmVoo.current = [];
+    await aguardarEnviosPendentes(envios);
     setFase('processando');
     const r = await window.aerolince.sessaoEncerrar(segmentosRecusados.current);
     // {ok:false,'Nenhum ditado em andamento.'} NÃO emite evento 'estado' e deixaria 'processando'
@@ -181,6 +221,7 @@ function App() {
     if (timer.current) clearInterval(timer.current);
     await captura.current?.cancelar();
     captura.current = null;
+    enviosEmVoo.current = []; // sessão descartada — não há mais o que esperar
     void window.aerolince.sessaoCancelar();
     setFase('idle');
   }
