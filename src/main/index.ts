@@ -31,6 +31,7 @@ import { escolherArquivosAcervo, importarAcervo } from './acervo.js';
 import {
   AlvoAprendizado,
   aprendizadoEmExecucao,
+  arquivoPermitidoParaAprendizado,
   cancelarAprendizado,
   estimarAprendizado,
   lerEstilo,
@@ -445,6 +446,24 @@ const AlvoAprendizadoSchema = z.object({
 const AlvosAprendizadoSchema = z.array(AlvoAprendizadoSchema).min(1);
 const TipoEstiloSchema = z.enum(['mascara', 'regras', 'frasario']);
 
+/**
+ * I5: rejeita alvos com algum `arquivo` fora de `config.acervoDir` ou de um tempdir do corpus
+ * do histórico — a validação de FORMATO do zod acima (`AlvosAprendizadoSchema`) não impede um
+ * caminho absoluto arbitrário do disco do médico (`/Users/.../Desktop/qualquer-coisa.txt`); só
+ * `arquivoPermitidoParaAprendizado` (main/aprendizado.ts) sabe onde os arquivos de aprendizado
+ * deveriam morar. Lança no primeiro caminho fora do permitido — mensagem clara, sem vazar mais
+ * do caminho do que o próprio renderer já mandou.
+ */
+function validarCaminhosDosAlvos(alvos: AlvoAprendizado[], config: Config): void {
+  for (const alvo of alvos) {
+    for (const arquivo of alvo.arquivos) {
+      if (!arquivoPermitidoParaAprendizado(arquivo, config.acervoDir)) {
+        throw new Error(`arquivo fora dos diretórios permitidos para aprendizado: ${arquivo}`);
+      }
+    }
+  }
+}
+
 // ── IPC ──────────────────────────────────────────────────────────────────────
 function registrarIpc(): void {
   ipcMain.handle('processar-audio', (_e, ab: ArrayBuffer) => processar(() => processarAudio(Buffer.from(ab))));
@@ -607,12 +626,16 @@ function registrarIpc(): void {
   ipcMain.handle('aprendizado-estimar', (_e, alvos: unknown) => {
     const parsed = AlvosAprendizadoSchema.safeParse(alvos);
     if (!parsed.success) throw new Error('alvos de aprendizado inválidos');
-    return estimarAprendizado(parsed.data as AlvoAprendizado[], cfg());
+    const c = cfg();
+    validarCaminhosDosAlvos(parsed.data as AlvoAprendizado[], c);
+    return estimarAprendizado(parsed.data as AlvoAprendizado[], c);
   });
   ipcMain.handle('aprendizado-rodar', (_e, alvos: unknown) => {
     const parsed = AlvosAprendizadoSchema.safeParse(alvos);
     if (!parsed.success) throw new Error('alvos de aprendizado inválidos');
-    return rodarAprendizado(parsed.data as AlvoAprendizado[], cfg(), (p) => broadcast('aprendizado-progresso', p));
+    const c = cfg();
+    validarCaminhosDosAlvos(parsed.data as AlvoAprendizado[], c);
+    return rodarAprendizado(parsed.data as AlvoAprendizado[], c, (p) => broadcast('aprendizado-progresso', p));
   });
   ipcMain.handle('aprendizado-cancelar', () => {
     cancelarAprendizado();

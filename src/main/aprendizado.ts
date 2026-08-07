@@ -12,7 +12,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import matter from 'gray-matter';
 import { corpoDoArquivo } from '../core/acervo/sanitizar.js';
 import { sanitize } from '../core/anonymizer/anonymizer.js';
@@ -296,10 +296,11 @@ export function salvarEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasa
 
 // Prefixo dos diretórios temporários do corpus do histórico dentro de `tmpdir()` — usado tanto
 // para CRIAR (`corpusDoHistorico`) quanto para RECONHECER e limpar (`limparTempDirsDoCorpus`,
-// `limparCorpusHistoricoOrfao`). Esses diretórios não têm política de retenção própria como o
-// spool de áudio (cifrado, ≤48 h) — são só texto já sanitizado, mas mesmo assim não devem
-// acumular para sempre no temp do SO (higiene de privacidade).
-const PREFIXO_TMP_CORPUS_HISTORICO = 'aerolince-corpus-historico-';
+// `limparCorpusHistoricoOrfao`) E validar (`arquivoPermitidoParaAprendizado`, I5). Esses
+// diretórios não têm política de retenção própria como o spool de áudio (cifrado, ≤48 h) — são
+// só texto já sanitizado, mas mesmo assim não devem acumular para sempre no temp do SO (higiene
+// de privacidade). Exportado para `main/index.ts` não duplicar a string mágica.
+export const PREFIXO_TMP_CORPUS_HISTORICO = 'aerolince-corpus-historico-';
 
 export interface ItemCorpusHistorico {
   /** Máscara à qual este laudo do histórico pertence (sidecar `maskId`) — usada para juntar ao alvo certo do "Reaprender". */
@@ -410,6 +411,36 @@ export function limparCorpusHistoricoOrfao(): number {
     }
   }
   return removidos;
+}
+
+// ── Confinamento de caminhos na fronteira IPC (I5) ───────────────────────────
+
+/** `caminho` está dentro de `dirBase` (ou é o próprio `dirBase`)? Resolve os dois antes de
+ *  comparar — normaliza `..`/segmentos relativos, então um `../../etc/passwd` disfarçado não
+ *  escapa da checagem por comparação textual ingênua. */
+function dentroDe(caminho: string, dirBase: string): boolean {
+  const alvo = resolve(caminho);
+  const base = resolve(dirBase);
+  return alvo === base || alvo.startsWith(base + sep);
+}
+
+/**
+ * Um `arquivo` citado por um `AlvoAprendizado` vindo do RENDERER pode entrar em
+ * `estimarAprendizado`/`rodarAprendizado`, que leem o conteúdo e (na execução) mandam para um
+ * LLM — a fronteira IPC (`main/index.ts`) não pode confiar que o renderer só aponte para onde
+ * deveria (`acervo-importar`/`reaprender-montar-alvos` já resolvem os caminhos certos, mas nada
+ * impede um renderer comprometido, ou um bug futuro, de mandar QUALQUER caminho absoluto do
+ * disco do médico). Permitido só dentro de `acervoDir` (onde o acervo sanitizado mora) OU de um
+ * tempdir do corpus do histórico (dentro de `tmpdir()`, com o prefixo `PREFIXO_TMP_CORPUS_HISTORICO`,
+ * criado por `corpusDoHistorico`) — qualquer outro caminho é rejeitado.
+ */
+export function arquivoPermitidoParaAprendizado(arquivo: string, acervoDir: string): boolean {
+  if (dentroDe(arquivo, acervoDir)) return true;
+  const raizTemp = resolve(tmpdir());
+  const alvo = resolve(arquivo);
+  if (alvo !== raizTemp && !alvo.startsWith(raizTemp + sep)) return false;
+  const primeiroSegmento = alvo.slice(raizTemp.length + 1).split(sep)[0] ?? '';
+  return primeiroSegmento.startsWith(PREFIXO_TMP_CORPUS_HISTORICO);
 }
 
 export interface ResumoReaprender {

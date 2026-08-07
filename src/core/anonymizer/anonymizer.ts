@@ -87,9 +87,18 @@ export function sanitize(text: string, options: SanitizeOptions = {}): SanitizeR
   return { clean, findings };
 }
 
-/** Extrai o nome do paciente do padrão de arquivo "AAAA-MM-DD_NNNNN_EXAME_NOME-DO-PACIENTE.pdf". */
+/**
+ * Extensões aceitas pelo padrão de nome de arquivo da clínica — mesmo conjunto aceito pelo
+ * acervo (`EXTENSOES_ACEITAS` em `main/acervo.ts`). Antes só `.pdf` era removida aqui (I4): um
+ * arquivo `.docx`/`.txt` no padrão da clínica mantinha a extensão grudada no último token do
+ * nome (ex.: "ISRAEL-ANDRETTA.docx"), e o reforço `extraNames` do `sanitize()` nunca casava
+ * esse "nome" no corpo do documento — ficava inerte, sem nenhum aviso.
+ */
+const EXTENSAO_ARQUIVO_ACEITA = /\.(pdf|docx|txt)$/i;
+
+/** Extrai o nome do paciente do padrão de arquivo "AAAA-MM-DD_NNNNN_EXAME_NOME-DO-PACIENTE.{pdf,docx,txt}". */
 export function patientNameFromFilename(filename: string): string | null {
-  const base = filename.replace(/\.pdf$/i, '');
+  const base = filename.replace(EXTENSAO_ARQUIVO_ACEITA, '');
   const parts = base.split('_');
   if (parts.length < 4) return null;
   const name = parts.slice(3).join(' ').replace(/-/g, ' ').trim();
@@ -98,7 +107,7 @@ export function patientNameFromFilename(filename: string): string | null {
 
 /** Extrai o tipo de exame do mesmo padrão de arquivo (ex.: "ABDOME-TOTAL"). */
 export function examTypeFromFilename(filename: string): string | null {
-  const base = filename.replace(/\.pdf$/i, '');
+  const base = filename.replace(EXTENSAO_ARQUIVO_ACEITA, '');
   const parts = base.split('_');
   return parts.length >= 3 && parts[2] ? parts[2] : null;
 }

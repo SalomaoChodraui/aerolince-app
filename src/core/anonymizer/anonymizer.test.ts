@@ -93,6 +93,21 @@ describe('patientNameFromFilename', () => {
   it('retorna null para padrões inesperados', () => {
     expect(patientNameFromFilename('laudo.pdf')).toBeNull();
   });
+
+  // I4 (regressão): extensões .docx/.txt (aceitas pelo acervo, ver EXTENSOES_ACEITAS em
+  // main/acervo.ts) ficavam grudadas no nome extraído ("ISRAEL ANDRETTA.docx"), e o reforço
+  // extraNames do sanitize() nunca casava esse "nome" (com extensão) no corpo do documento.
+  it('extrai o nome sem a extensão para .docx e .txt — sem isso o extraNames nunca casa no corpo', () => {
+    expect(patientNameFromFilename('2026-07-15_32546_ABDOME-TOTAL_ISRAEL-ANDRETTA.docx')).toBe('ISRAEL ANDRETTA');
+    expect(patientNameFromFilename('2026-07-15_32546_ABDOME-TOTAL_ISRAEL-ANDRETTA.txt')).toBe('ISRAEL ANDRETTA');
+  });
+
+  it('regressão de ponta a ponta: nome extraído de um .docx casa no corpo via sanitize/extraNames', () => {
+    const nome = patientNameFromFilename('2026-07-15_32546_ABDOME-TOTAL_ISRAEL-ANDRETTA.docx');
+    const r = sanitize('Paciente Israel Andretta, exame sem alterações.', { extraNames: nome ? [nome] : [] });
+    expect(r.clean).not.toMatch(/israel/i);
+    expect(r.clean).toContain('[NOME]');
+  });
 });
 
 describe('examTypeFromFilename', () => {

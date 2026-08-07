@@ -6,6 +6,7 @@ import { ConfigSchema, type Config } from '../core/config/schema.js';
 import type { CompleteParams, LLMResult } from '../core/llm/types.js';
 import {
   type AlvoAprendizado,
+  arquivoPermitidoParaAprendizado,
   cancelarAprendizado,
   corpusDoHistorico,
   estimarAprendizado,
@@ -578,6 +579,57 @@ describe('listarEstilo — origem de regras/frasário (médico vence a base)', (
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
       rmSync(acervoDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('arquivoPermitidoParaAprendizado (I5 — confinamento de caminhos na fronteira IPC)', () => {
+  let acervoDir: string;
+  let outroDir: string;
+
+  beforeEach(() => {
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-i5-acervo-'));
+    outroDir = mkdtempSync(join(tmpdir(), 'aerolince-i5-fora-'));
+  });
+
+  afterEach(() => {
+    rmSync(acervoDir, { recursive: true, force: true });
+    rmSync(outroDir, { recursive: true, force: true });
+  });
+
+  it('permite um arquivo dentro de acervoDir', () => {
+    expect(arquivoPermitidoParaAprendizado(join(acervoDir, 'torax-tc_2026-01-01_001.md'), acervoDir)).toBe(true);
+  });
+
+  it('permite um arquivo dentro de um tempdir do corpus do histórico (tmpdir()/aerolince-corpus-historico-*)', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aerolince-corpus-historico-'));
+    try {
+      expect(arquivoPermitidoParaAprendizado(join(tempDir, 'torax-tc_000.md'), acervoDir)).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('I5 (regressão obrigatória): rejeita um caminho fora de acervoDir e fora de qualquer tempdir do histórico', () => {
+    expect(arquivoPermitidoParaAprendizado(join(outroDir, 'arquivo-qualquer.md'), acervoDir)).toBe(false);
+  });
+
+  it('rejeita um tempdir de OUTRO propósito (mesmo estando em tmpdir(), sem o prefixo do histórico)', () => {
+    expect(arquivoPermitidoParaAprendizado(join(outroDir, 'x.md'), acervoDir)).toBe(false);
+  });
+
+  it('rejeita path traversal disfarçado (../.. a partir de dentro de acervoDir escapando para fora)', () => {
+    const escapado = join(acervoDir, '..', '..', 'etc', 'passwd');
+    expect(arquivoPermitidoParaAprendizado(escapado, acervoDir)).toBe(false);
+  });
+
+  it('não deixa um prefixo de diretório parecido colar (acervoDir-outro não é "dentro de" acervoDir)', () => {
+    const parecido = `${acervoDir}-outro`;
+    mkdirSync(parecido, { recursive: true });
+    try {
+      expect(arquivoPermitidoParaAprendizado(join(parecido, 'x.md'), acervoDir)).toBe(false);
+    } finally {
+      rmSync(parecido, { recursive: true, force: true });
     }
   });
 });
