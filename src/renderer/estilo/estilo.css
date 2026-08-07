@@ -1,0 +1,93 @@
+/* "Meu estilo" (Bloco 3) — grid 260px/1fr, mesmo padrão do histórico (historico.css) */
+
+.estilo-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 0;
+}
+
+.estilo-lista {
+  overflow-y: auto;
+  padding: 12px 8px;
+  border-right: 1px solid var(--linha);
+}
+.estilo-grupo {
+  margin-bottom: 18px;
+}
+.estilo-grupo > h2 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--texto-suave);
+  margin: 0 0 6px;
+  padding: 0 6px;
+}
+.estilo-grupo > ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.estilo-grupo li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  margin-bottom: 1px;
+}
+.estilo-grupo li:hover {
+  background: var(--surface-2);
+}
+.estilo-grupo li.sel {
+  background: var(--oxido-suave);
+}
+.estilo-nome {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.estilo-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--linha);
+  color: var(--texto-suave);
+}
+.estilo-badge.minha {
+  color: var(--oxido);
+  border-color: var(--oxido);
+}
+
+.estilo-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.estilo-aviso {
+  margin: 14px 14px 0;
+  padding: 10px 14px;
+  background: var(--oxido-suave);
+  border: 1px solid var(--oxido);
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+.estilo-editor textarea {
+  flex: 1;
+  margin: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--linha);
+  background: var(--surface-2);
+  color: var(--texto);
+  font: 13px/1.55 'SF Mono', Menlo, Consolas, monospace;
+  resize: none;
+}

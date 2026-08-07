@@ -144,6 +144,15 @@ function montarPlano(resumo: ResumoImportacao, decisoes: Record<string, string>)
 function App() {
   const [fase, setFase] = useState<Fase>('selecionar');
 
+  // Reaprender (T7): `?modo=reaprender` na URL (ver `abrirImportar` em main/index.ts) pula
+  // direto para a etapa de custo com alvos montados no main (acervo + histórico editado) —
+  // nenhum passo de seleção/consentimento aqui, o médico já autorizou isso ao importar.
+  const [modoReaprender, setModoReaprender] = useState<boolean>(
+    () => new URLSearchParams(window.location.search).get('modo') === 'reaprender',
+  );
+  const [carregandoReaprender, setCarregandoReaprender] = useState(false);
+  const [erroReaprender, setErroReaprender] = useState<string | null>(null);
+
   // Passo 1 — seleção
   const [arquivos, setArquivos] = useState<string[]>([]);
   const [arrastando, setArrastando] = useState(false);
@@ -187,7 +196,32 @@ function App() {
     void atualizarContadorRascunhos();
     api.onAcervoProgresso((p) => setProgressoAcervo(p));
     api.onAprendizadoProgresso((p) => setProgressoAprendizado((s) => ({ ...s, [p.chave]: p })));
+    if (modoReaprender) void iniciarReaprender();
   }, []);
+
+  // ── Reaprender (T7) ──────────────────────────────────────────────────────
+  async function iniciarReaprender(): Promise<void> {
+    setCarregandoReaprender(true);
+    setErroReaprender(null);
+    try {
+      const [resumoAlvos, estilo] = await Promise.all([api.reaprenderMontarAlvos(), api.estiloListar()]);
+      const nomePorId = new Map(estilo.mascaras.map((m) => [m.id, m.nome]));
+      const alvos: AlvoPlanejado[] = resumoAlvos.alvos.map((a) => ({ ...a, rotulo: nomePorId.get(a.maskId) ?? a.maskId }));
+      const fora = resumoAlvos.semArquivos.map((s) => ({
+        rotulo: nomePorId.get(s.maskId) ?? s.nome,
+        motivo: 'sem laudos no acervo nem no histórico editado ainda',
+      }));
+      const totalLaudos = alvos.reduce((soma, a) => soma + a.arquivos.length, 0);
+      const p: Plano = { alvos, fora, totalLaudos };
+      setPlano(p);
+      setFase('custo');
+      await buscarEstimativa(p.alvos);
+    } catch (e) {
+      setErroReaprender(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCarregandoReaprender(false);
+    }
+  }
 
   async function atualizarContadorRascunhos(): Promise<void> {
     try {
@@ -326,6 +360,11 @@ function App() {
   }
 
   function recomecar(): void {
+    // Sai do Reaprender (se veio de lá) — "recomeçar" sempre volta ao passo 1 normal
+    // (seleção de arquivos), nunca reabre o carregamento automático do Reaprender.
+    setModoReaprender(false);
+    setErroReaprender(null);
+    setCarregandoReaprender(false);
     setFase('selecionar');
     setArquivos([]);
     setErroImportacao(null);
@@ -352,14 +391,25 @@ function App() {
     <div className="janela">
       <div className="topo">
         <img src={logoUrl} alt="Aerolince" className="logo" />
-        <h1>Importar meus laudos</h1>
-        <span className="imp-passo" style={{ marginLeft: 'auto' }}>
-          Passo {passoAtual} de {ORDEM.length} · {TITULOS[fase]}
-        </span>
+        <h1>{modoReaprender ? 'Reaprender com meus laudos' : 'Importar meus laudos'}</h1>
+        {!modoReaprender && (
+          <span className="imp-passo" style={{ marginLeft: 'auto' }}>
+            Passo {passoAtual} de {ORDEM.length} · {TITULOS[fase]}
+          </span>
+        )}
       </div>
 
       <div className="corpo">
-        {fase === 'selecionar' && (
+        {fase === 'selecionar' && modoReaprender && (
+          <div className="imp-progresso-wrap">
+            {erroReaprender ? (
+              <div className="imp-erro">Não foi possível montar os alvos do Reaprender: {erroReaprender}</div>
+            ) : (
+              <div className="imp-vazio">Reunindo seus laudos (acervo importado + histórico editado)…</div>
+            )}
+          </div>
+        )}
+        {fase === 'selecionar' && !modoReaprender && (
           <>
             {rascunhosPendentes > 0 && (
               <div className="imp-banner">
@@ -515,7 +565,9 @@ function App() {
           <>
             {plano.alvos.length === 0 ? (
               <div className="imp-vazio">
-                Nada para aprender nesta leva — importe mais laudos ou reconheça mais clusters na etapa anterior.
+                {modoReaprender
+                  ? 'Nenhuma das suas máscaras tem laudos no acervo ou no histórico editado ainda — importe laudos primeiro.'
+                  : 'Nada para aprender nesta leva — importe mais laudos ou reconheça mais clusters na etapa anterior.'}
               </div>
             ) : erroEstimativa ? (
               <div className="imp-erro">
@@ -654,7 +706,12 @@ function App() {
       </div>
 
       <div className="rodape-janela">
-        {fase === 'selecionar' && (
+        {fase === 'selecionar' && modoReaprender && erroReaprender && (
+          <button className="primario" onClick={() => void iniciarReaprender()} disabled={carregandoReaprender}>
+            Tentar de novo
+          </button>
+        )}
+        {fase === 'selecionar' && !modoReaprender && (
           <>
             <span className="dica">Extração e classificação são 100% locais — nada sai do seu computador aqui.</span>
             <button className="primario" onClick={iniciarProcessamento} disabled={arquivos.length === 0}>
@@ -682,8 +739,8 @@ function App() {
         )}
         {fase === 'custo' && plano && (
           <>
-            <button className="fantasma" onClick={() => setFase('revisar')}>
-              Voltar
+            <button className="fantasma" onClick={() => (modoReaprender ? recomecar() : setFase('revisar'))}>
+              {modoReaprender ? 'Importar laudos novos em vez disso' : 'Voltar'}
             </button>
             <button
               className="primario"

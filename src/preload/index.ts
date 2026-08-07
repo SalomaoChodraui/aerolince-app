@@ -25,7 +25,9 @@ type ProgressoAcervo = { fase: 'extraindo' | 'classificando' | 'sanitizando'; at
 type ProgressoAprendizado = { chave: string; etapa: string; atual: number; total: number };
 type Rascunho = { arquivo: string; tipo: 'mascara' | 'regras'; alvo: string };
 type ItemEstiloMascara = { id: string; nome: string; origemEfetiva: 'base' | 'minha' };
-type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: string[]; frasario: string[] };
+type ItemEstilo = { nome: string; origemEfetiva: 'base' | 'minha' };
+type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: ItemEstilo[]; frasario: ItemEstilo[] };
+type ResumoReaprender = { alvos: AlvoAprendizado[]; semArquivos: { maskId: string; nome: string }[] };
 
 const api = {
   // Pipeline
@@ -114,7 +116,11 @@ const api = {
     ipcRenderer.invoke('estilo-salvar', tipo, nome, texto),
 
   // Janelas e utilidades
-  abrir: (qual: 'settings' | 'historico' | 'onboarding' | 'importar'): Promise<void> => ipcRenderer.invoke('abrir', qual),
+  abrir: (qual: 'settings' | 'historico' | 'onboarding' | 'importar' | 'estilo'): Promise<void> =>
+    ipcRenderer.invoke('abrir', qual),
+  // Reaprender: abre o wizard de importação já na etapa de custo, com alvos do acervo + histórico editado.
+  abrirReaprender: (): Promise<void> => ipcRenderer.invoke('abrir-reaprender'),
+  reaprenderMontarAlvos: (): Promise<ResumoReaprender> => ipcRenderer.invoke('reaprender-montar-alvos'),
   escolherPasta: (): Promise<string | null> => ipcRenderer.invoke('escolher-pasta'),
   abrirPasta: (caminho: string): Promise<string> => ipcRenderer.invoke('abrir-pasta', caminho),
   concluirOnboarding: (): Promise<void> => ipcRenderer.invoke('concluir-onboarding'),

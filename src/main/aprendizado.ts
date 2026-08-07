@@ -1,20 +1,24 @@
 /**
- * Orquestração do aprendizado (Bloco 3, T5): estimativa de custo (SEM LLM) e
+ * Orquestração do aprendizado (Bloco 3, T5+T7): estimativa de custo (SEM LLM) e
  * execução (COM LLM, gate BYOK, sequencial, cancelável) de `destilar`/`aprender`;
  * mais "Meu estilo" — leitura/gravação dos itens da biblioteca do médico
  * (máscaras/regras/frasário), que é o mesmo diretório que os rascunhos gerados
- * aqui acabam promovendo (`aplicarRascunho`, em core/aprendizado/aplicar.ts).
+ * aqui acabam promovendo (`aplicarRascunho`, em core/aprendizado/aplicar.ts);
+ * mais o corpus do "Reaprender" (T7) — junta o acervo já sanitizado com a
+ * edição final do médico no histórico (sinal de estilo mais puro).
  *
  * Progresso via `onProgresso` — o chamador (main/index.ts) repassa a TODAS as
  * janelas vivas via `webContents.send` (mesmo padrão do canal `estado`).
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
+import { sanitize } from '../core/anonymizer/anonymizer.js';
 import { writeFileAtomicSync } from '../core/atomic-write.js';
 import { validarNomeRascunho } from '../core/aprendizado/aplicar.js';
 import { aprenderRegras } from '../core/aprendizado/aprender.js';
-import { corpusPorArquivos, montarCorpus } from '../core/aprendizado/corpus.js';
+import { corpusPorArquivos, corpusPorPrefixos, montarCorpus } from '../core/aprendizado/corpus.js';
 import { estimarCustoAprendizado } from '../core/aprendizado/custo.js';
 import { destilarMascara } from '../core/aprendizado/destilar.js';
 import type { Config } from '../core/config/schema.js';
@@ -143,10 +147,16 @@ export interface ItemEstiloMascara {
   origemEfetiva: 'base' | 'minha';
 }
 
+/** Regra ou frase do frasário: `nome` é o identificador (sem `.md`) usado por `estiloLer`/`estiloSalvar`. */
+export interface ItemEstilo {
+  nome: string;
+  origemEfetiva: 'base' | 'minha';
+}
+
 export interface ResumoEstilo {
   mascaras: ItemEstiloMascara[];
-  regras: string[];
-  frasario: string[];
+  regras: ItemEstilo[];
+  frasario: ItemEstilo[];
 }
 
 /** Nomes (sem `.md`) dos arquivos de um diretório; `[]` se ausente. */
@@ -157,7 +167,14 @@ function nomesSemExtensao(dir: string): string[] {
     .map((f) => f.replace(/\.md$/, ''));
 }
 
-/** Catálogo do "Meu estilo": máscaras efetivas (com origem) + nomes de regras/frasário disponíveis para editar. */
+/** União base+médico com a origem EFETIVA de cada nome (médico vence — mesmo critério de `lerEstilo`). */
+function itensComOrigem(baseDir: string, medicoDir: string): ItemEstilo[] {
+  const doMedico = new Set(nomesSemExtensao(medicoDir));
+  const todos = new Set([...nomesSemExtensao(baseDir), ...doMedico]);
+  return [...todos].sort().map((nome) => ({ nome, origemEfetiva: doMedico.has(nome) ? 'minha' : 'base' }));
+}
+
+/** Catálogo do "Meu estilo": máscaras/regras/frasário efetivos, cada um com a origem (base vs. médico). */
 export function listarEstilo(config: Config): ResumoEstilo {
   let masks: ReturnType<typeof loadLibrary> = [];
   try {
@@ -170,12 +187,8 @@ export function listarEstilo(config: Config): ResumoEstilo {
     nome: m.nome,
     origemEfetiva: (existsSync(join(config.masksDir, `${m.id}.md`)) ? 'minha' : 'base') as 'base' | 'minha',
   }));
-  const regras = [
-    ...new Set([...nomesSemExtensao(join(config.bibliotecaBaseDir, 'regras')), ...nomesSemExtensao(join(config.masksDir, 'regras'))]),
-  ].sort();
-  const frasario = [
-    ...new Set([...nomesSemExtensao(join(config.bibliotecaBaseDir, 'frasario')), ...nomesSemExtensao(join(config.masksDir, 'frasario'))]),
-  ].sort();
+  const regras = itensComOrigem(join(config.bibliotecaBaseDir, 'regras'), join(config.masksDir, 'regras'));
+  const frasario = itensComOrigem(join(config.bibliotecaBaseDir, 'frasario'), join(config.masksDir, 'frasario'));
   return { mascaras, regras, frasario };
 }
 
@@ -221,4 +234,112 @@ export function salvarEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasa
   const destino = join(config.masksDir, caminhoRelativoDe(tipo, nome));
   mkdirSync(dirname(destino), { recursive: true });
   writeFileAtomicSync(destino, texto);
+}
+
+// ── Reaprender com meus laudos (T7): corpus do histórico editado ────────────
+
+export interface ItemCorpusHistorico {
+  /** Máscara à qual este laudo do histórico pertence (sidecar `maskId`) — usada para juntar ao alvo certo do "Reaprender". */
+  maskId: string;
+  /** Caminho ABSOLUTO de um arquivo TEMPORÁRIO (fora de `outputDir`, nunca versionado) com o texto final RE-SANITIZADO. */
+  arquivo: string;
+}
+
+/**
+ * Corpus do "Reaprender com meus laudos": a edição final do médico no
+ * histórico (`laudoFinalEditado`) é o sinal de estilo mais puro (decisão 6 /
+ * item 1 do backlog antigo) — mais direto que qualquer laudo do acervo, porque
+ * é o próprio médico corrigindo a saída do app.
+ *
+ * Varre os sidecars de `outputDir`, filtra os que têm `laudoFinalEditado`
+ * (ignora sidecar ausente/corrompido ou sem edição), RE-SANITIZA o texto final
+ * com `sanitize().clean` — regra de privacidade: NENHUM texto do histórico vai
+ * a um LLM sem passar de novo pelo anonimizador local, mesmo já tendo sido
+ * sanitizado uma vez — e grava cada um num arquivo `.md` TEMPORÁRIO (fora de
+ * `outputDir`/git) para reusar o mesmo pipeline de corpus de qualquer arquivo
+ * do acervo (`corpoDoArquivo`/`montarCorpus`, que também re-sanitizam, defesa
+ * em profundidade). `cap` mantém só os mais recentes — nomes de arquivo datados
+ * (`AAAA-MM-DD_HHMM_...`) tornam a ordem lexicográfica cronológica.
+ */
+export function corpusDoHistorico(outputDir: string, cap = 40): ItemCorpusHistorico[] {
+  if (!existsSync(outputDir)) return [];
+  const editados: { maskId: string; texto: string }[] = [];
+  for (const f of readdirSync(outputDir).filter((f) => f.endsWith('.txt')).sort()) {
+    const sidecarPath = join(outputDir, f.replace(/\.txt$/, '.json'));
+    if (!existsSync(sidecarPath)) continue;
+    let meta: Record<string, unknown>;
+    try {
+      meta = JSON.parse(readFileSync(sidecarPath, 'utf8'));
+    } catch {
+      continue; // sidecar corrompido — não entra no corpus
+    }
+    const final = meta.laudoFinalEditado;
+    if (typeof final !== 'string' || !final.trim()) continue;
+    const maskId = typeof meta.maskId === 'string' && meta.maskId ? meta.maskId : 'desconhecido';
+    editados.push({ maskId, texto: final });
+  }
+  const recentes = editados.slice(-cap);
+  if (recentes.length === 0) return [];
+  const dir = mkdtempSync(join(tmpdir(), 'aerolince-corpus-historico-'));
+  return recentes.map(({ maskId, texto }, i) => {
+    const { clean } = sanitize(texto); // re-sanitização obrigatória, mesmo já vindo do pipeline sanitizado
+    const destino = join(dir, `${maskId}_${String(i).padStart(3, '0')}.md`);
+    writeFileSync(destino, clean, 'utf8');
+    return { maskId, arquivo: destino };
+  });
+}
+
+export interface ResumoReaprender {
+  alvos: AlvoAprendizado[];
+  /** Máscaras com `prefixos` configurados mas sem nenhum laudo disponível ainda (nem acervo, nem histórico editado). */
+  semArquivos: { maskId: string; nome: string }[];
+}
+
+/**
+ * Monta os alvos do botão "Reaprender com meus laudos" (janela Meu Estilo):
+ * para cada máscara com `prefixos` configurados, junta os laudos já
+ * sanitizados no ACERVO (`corpusPorPrefixos`, mesmo mecanismo do `laudo
+ * aprender todos` da CLI) com os do HISTÓRICO EDITADO (`corpusDoHistorico`)
+ * que pertencem à mesma máscara. O histórico entra no FIM da lista — como o
+ * cap de `corpusPorArquivos` corta pelo INÍCIO (`slice(-cap)`), a edição do
+ * médico tem prioridade sobre o acervo mais antigo quando o total excede o
+ * cap (peso de recência). Só gera alvos `'aprender'` (fraseado de máscaras
+ * já existentes) — "Reaprender" refina o estilo, não descobre máscaras novas
+ * (isso é o wizard normal de importação). Sem chamada de LLM.
+ */
+export function montarAlvosReaprender(config: Config, capHistorico = 40): ResumoReaprender {
+  let masks: ReturnType<typeof loadLibrary> = [];
+  try {
+    masks = loadLibrary(bibliotecasDe(config));
+  } catch {
+    masks = [];
+  }
+  const comPrefixos = masks.filter((m) => m.prefixos.length > 0);
+  const historico = corpusDoHistorico(config.outputDir, capHistorico);
+  const historicoPorMask = new Map<string, string[]>();
+  for (const h of historico) {
+    const lista = historicoPorMask.get(h.maskId) ?? [];
+    lista.push(h.arquivo);
+    historicoPorMask.set(h.maskId, lista);
+  }
+
+  const CAP_POR_MASCARA = 60; // mesmo cap do `laudo aprender todos` da CLI (corpus.ts)
+  const alvos: AlvoAprendizado[] = [];
+  const semArquivos: ResumoReaprender['semArquivos'] = [];
+  for (const m of comPrefixos) {
+    const doAcervo = existsSync(config.acervoDir)
+      ? corpusPorPrefixos(config.acervoDir, m.prefixos, CAP_POR_MASCARA, { contendo: m.corpus_contendo, sem: m.corpus_sem })
+      : [];
+    const doHistorico = historicoPorMask.get(m.id) ?? [];
+    if (doAcervo.length === 0 && doHistorico.length === 0) {
+      semArquivos.push({ maskId: m.id, nome: m.nome });
+      continue;
+    }
+    // Cap final pelo MESMO `corpusPorArquivos` do resto do pipeline (`.slice(-cap)`):
+    // com histórico no fim, a edição do médico só cede espaço ao acervo quando o
+    // total ultrapassa o cap — peso de recência de fato, não só na ordem.
+    const arquivos = corpusPorArquivos([...doAcervo, ...doHistorico], CAP_POR_MASCARA);
+    alvos.push({ tipo: 'aprender', chave: m.id, maskId: m.id, arquivos });
+  }
+  return { alvos, semArquivos };
 }

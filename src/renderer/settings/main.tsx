@@ -307,6 +307,7 @@ function App() {
         <span className="dica">As mudanças são salvas automaticamente.</span>
         <button onClick={() => api.abrir('onboarding')}>Ver guia rápido</button>
         <button onClick={() => api.abrir('historico')}>Histórico de laudos</button>
+        <button onClick={() => api.abrir('estilo')}>Meu estilo</button>
       </div>
     </div>
   );

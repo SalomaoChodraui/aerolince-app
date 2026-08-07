@@ -34,6 +34,7 @@ import {
   estimarAprendizado,
   lerEstilo,
   listarEstilo,
+  montarAlvosReaprender,
   rodarAprendizado,
   salvarEstilo,
 } from './aprendizado.js';
@@ -69,6 +70,7 @@ let settingsWin: BrowserWindow | null = null;
 let historicoWin: BrowserWindow | null = null;
 let onboardingWin: BrowserWindow | null = null;
 let importarWin: BrowserWindow | null = null;
+let estiloWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let appRoot = '';
@@ -76,9 +78,13 @@ let appRoot = '';
 const preload = join(import.meta.dirname, '../preload/index.mjs');
 const devUrl = process.env['ELECTRON_RENDERER_URL'];
 
-function loadPage(win: BrowserWindow, page: string): void {
-  if (devUrl) void win.loadURL(`${devUrl}/${page}/index.html`);
-  else void win.loadFile(join(import.meta.dirname, `../renderer/${page}/index.html`));
+// `query` vira `?a=b` na URL da página — hoje só o wizard de importação usa
+// (`?modo=reaprender`), para o renderer saber que deve abrir direto na etapa
+// de custo com os alvos do Reaprender, sem precisar de um canal IPC à parte.
+function loadPage(win: BrowserWindow, page: string, query?: Record<string, string>): void {
+  const qs = query ? `?${new URLSearchParams(query).toString()}` : '';
+  if (devUrl) void win.loadURL(`${devUrl}/${page}/index.html${qs}`);
+  else void win.loadFile(join(import.meta.dirname, `../renderer/${page}/index.html`), query ? { query } : undefined);
 }
 
 function cfg(): Config {
@@ -150,6 +156,7 @@ function abrirAux(
   set: (w: BrowserWindow | null) => void,
   page: string,
   opts: { width: number; height: number; title: string },
+  query?: Record<string, string>,
 ): void {
   if (ref && !ref.isDestroyed()) {
     ref.show();
@@ -166,7 +173,7 @@ function abrirAux(
     webPreferences: { preload, sandbox: false },
   });
   win.on('closed', () => set(null));
-  loadPage(win, page);
+  loadPage(win, page, query);
   set(win);
 }
 
@@ -191,11 +198,25 @@ function abrirOnboarding(): void {
     title: 'Bem-vindo ao Aerolince',
   });
 }
-function abrirImportar(): void {
-  abrirAux(importarWin, (w) => (importarWin = w), 'importar', {
-    width: 760,
-    height: 760,
-    title: 'Aerolince — Importar meus laudos',
+function abrirImportar(opts?: { modo?: 'reaprender' }): void {
+  const modo = opts?.modo;
+  abrirAux(
+    importarWin,
+    (w) => (importarWin = w),
+    'importar',
+    {
+      width: 760,
+      height: 760,
+      title: modo === 'reaprender' ? 'Aerolince — Reaprender com meus laudos' : 'Aerolince — Importar meus laudos',
+    },
+    modo ? { modo } : undefined,
+  );
+}
+function abrirEstilo(): void {
+  abrirAux(estiloWin, (w) => (estiloWin = w), 'estilo', {
+    width: 860,
+    height: 720,
+    title: 'Aerolince — Meu estilo',
   });
 }
 
@@ -234,7 +255,8 @@ function atualizarMenuTray(): void {
   itens.push(
     { type: 'separator' },
     { label: 'Histórico de laudos…', click: abrirHistorico },
-    { label: 'Importar meus laudos…', click: abrirImportar },
+    { label: 'Meu estilo…', click: abrirEstilo },
+    { label: 'Importar meus laudos…', click: () => abrirImportar() },
     { label: 'Configurações…', click: abrirSettings },
     { label: 'Guia rápido…', click: abrirOnboarding },
     { type: 'separator' },
@@ -262,7 +284,7 @@ function estado(fase: string, msg?: string): void {
 // mesmo padrão do canal 'estado' acima (o wizard de importação é quem realmente
 // escuta hoje; as demais só ignoram o evento).
 function broadcast(canal: string, payload: unknown): void {
-  for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin, importarWin]) {
+  for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin, importarWin, estiloWin]) {
     if (w && !w.isDestroyed()) w.webContents.send(canal, payload);
   }
 }
@@ -471,7 +493,7 @@ function registrarIpc(): void {
     floatWin?.setOpacity(c.ui.opacidadeBalao);
     registrarAtalho(c);
     atualizarMenuTray();
-    for (const w of [resultWin, settingsWin, historicoWin, onboardingWin, importarWin]) w?.webContents.send('config-mudou', c);
+    for (const w of [resultWin, settingsWin, historicoWin, onboardingWin, importarWin, estiloWin]) w?.webContents.send('config-mudou', c);
     return c;
   });
   // Arraste manual do botão flutuante (clique = ditar, arraste = mover)
@@ -525,12 +547,19 @@ function registrarIpc(): void {
   ipcMain.handle('macro-rodar', (_e, comando: string) => processar(() => processarTexto(comando)));
 
   // Janelas e utilidades
-  ipcMain.handle('abrir', (_e, qual: 'settings' | 'historico' | 'onboarding' | 'importar') => {
+  ipcMain.handle('abrir', (_e, qual: 'settings' | 'historico' | 'onboarding' | 'importar' | 'estilo') => {
     if (qual === 'settings') abrirSettings();
     else if (qual === 'historico') abrirHistorico();
     else if (qual === 'importar') abrirImportar();
+    else if (qual === 'estilo') abrirEstilo();
     else abrirOnboarding();
   });
+  // Reaprender (Meu estilo → wizard de importação já na etapa de custo, com os
+  // alvos montados do acervo + histórico editado): IPC dedicado em vez de mais
+  // um valor em `abrir` — evita amarrar a query string (`?modo=reaprender`) na
+  // fronteira genérica de janelas, que hoje não carrega parâmetro nenhum.
+  ipcMain.handle('abrir-reaprender', () => abrirImportar({ modo: 'reaprender' }));
+  ipcMain.handle('reaprender-montar-alvos', () => montarAlvosReaprender(cfg()));
   ipcMain.handle('escolher-pasta', async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] });
     return r.canceled ? null : r.filePaths[0];
