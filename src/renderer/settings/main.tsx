@@ -5,7 +5,7 @@ import '../shared/window.css';
 import logoUrl from '../assets/aerolince-logo-primary.svg';
 import { aplicarGlass } from '../shared/glass.js';
 import { ChavesApi } from '../shared/ChavesApi.js';
-import type { Macro, RendererConfig } from '../shared/types.js';
+import type { Macro, RendererConfig, SecaoLaudo } from '../shared/types.js';
 
 const api = window.aerolince;
 
@@ -17,6 +17,17 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
     </label>
   );
 }
+
+/** Nome amigável de cada seção do laudo na tela (o rótulo em si é editável). */
+const NOME_SECAO: Record<string, string> = {
+  titulo: 'Título',
+  tecnica: 'Técnica',
+  indicacao: 'Indicação',
+  achados: 'Achados / descrição',
+  'achados-adicionais': 'Achados adicionais',
+  conclusao: 'Conclusão',
+  observacao: 'Observação',
+};
 
 function App() {
   const [cfg, setCfg] = useState<RendererConfig | null>(null);
@@ -57,6 +68,22 @@ function App() {
     const c = (await api.configSet({ llm: patch })) as RendererConfig;
     setCfg(c);
     flashSalvo();
+  }
+  async function patchLaudo(patch: Partial<RendererConfig['laudo']>) {
+    const c = (await api.configSet({ laudo: patch })) as RendererConfig;
+    setCfg(c);
+    flashSalvo();
+  }
+  /** Persiste as seções com UMA alterada (switch/rótulo). */
+  function salvarSecao(id: string, campo: Partial<SecaoLaudo>) {
+    return patchLaudo({ secoes: cfg!.laudo.secoes.map((s) => (s.id === id ? { ...s, ...campo } : s)) });
+  }
+  /** Edição local do rótulo (sem persistir a cada tecla — persiste no onBlur). */
+  function editarRotuloLocal(id: string, rotulo: string) {
+    setCfg({
+      ...cfg!,
+      laudo: { ...cfg!.laudo, secoes: cfg!.laudo.secoes.map((s) => (s.id === id ? { ...s, rotulo } : s)) },
+    });
   }
   function flashSalvo() {
     setSalvo(true);
@@ -205,6 +232,50 @@ function App() {
             </div>
           ))}
           <button onClick={addMacro}>+ Novo atalho</button>
+        </div>
+
+        <div className="secao">
+          <h2>Formato do laudo</h2>
+          <div className="linha">
+            <div>
+              <div className="rot">Parágrafos da descrição</div>
+              <div className="desc">Como as frases do laudo são separadas no texto final</div>
+            </div>
+            <select
+              className="ctrl"
+              value={cfg.laudo.paragrafo}
+              onChange={(e) => patchLaudo({ paragrafo: e.target.value as RendererConfig['laudo']['paragrafo'] })}
+            >
+              <option value="por-bloco">Um parágrafo por achado (atual)</option>
+              <option value="corrido">Texto corrido, uma frase por linha</option>
+            </select>
+          </div>
+          <div className="desc" style={{ marginBottom: 8 }}>
+            Seções do laudo, na ordem do texto: desligue as que não quer no laudo final e edite os rótulos como
+            preferir. Indicação e Observação são preenchidas por voz (“indicação: …”, “observação: …”/“nota: …”).
+          </div>
+          {cfg.laudo.secoes.map((s) => (
+            <div className="linha" key={s.id}>
+              <div className="rot" style={{ width: 160 }}>{NOME_SECAO[s.id] ?? s.id}</div>
+              {s.id === 'titulo' ? (
+                <span className="desc" style={{ flex: 1 }}>primeira linha do laudo (sem rótulo)</span>
+              ) : (
+                <input
+                  type="text"
+                  value={s.rotulo}
+                  onChange={(e) => editarRotuloLocal(s.id, e.target.value)}
+                  onBlur={(e) => salvarSecao(s.id, { rotulo: e.target.value })}
+                  style={{ flex: 1 }}
+                />
+              )}
+              <Switch on={s.ativa} onChange={(v) => salvarSecao(s.id, { ativa: v })} />
+            </div>
+          ))}
+          <div className="desc" style={{ padding: '4px 14px' }}>
+            Rótulos que o laudo já traz (ex.: “Opinião:” no crânio) são respeitados enquanto você não editar o rótulo
+            acima. Exceções por exame (ex.: crânio com “Opinião:”/“Nota:”) podem ser definidas em laudo.porExame no
+            laudo.config.json.
+          </div>
         </div>
 
         <div className="secao">
