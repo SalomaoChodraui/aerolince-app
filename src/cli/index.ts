@@ -486,11 +486,7 @@ async function main() {
     await runEval();
   } else if (cmd === 'masks') {
     const masks = loadMasks(loadConfig(APP_ROOT));
-    console.log(
-      masks
-        .map((m) => `${m.id} — ${m.nome} (v${m.versao}, ${m.origem})${m.origem === 'base' ? ' (base)' : ''}`)
-        .join('\n'),
-    );
+    console.log(masks.map((m) => `${m.id} — ${m.nome} (v${m.versao}, ${m.origem})`).join('\n'));
   } else if (cmd && existsSync(cmd)) {
     await runPipeline({ audioPath: cmd, ...common });
   } else {
