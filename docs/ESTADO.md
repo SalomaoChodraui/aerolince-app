@@ -1,6 +1,6 @@
 # Estado do projeto — ponto de retomada
 
-_Atualizado em 07/08/2026, após a verificação final do Bloco 2 (biblioteca base em camadas). Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
+_Atualizado em 07/08/2026, após a verificação final do Bloco 3 (acervo + aprendizado in-app). Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
 
 ## ⏩ Comece por aqui
 
@@ -8,15 +8,20 @@ _Atualizado em 07/08/2026, após a verificação final do Bloco 2 (biblioteca ba
    (anthropic|openai), factory `criarLLM`, gate `chavesNecessarias`, `ChavesApi` compartilhado,
    onboarding bloqueante (spec e plano em `docs/superpowers/specs/2026-08-07-inteligencia-do-medico-byok-design.md`
    e `docs/superpowers/plans/2026-08-07-bloco1-byok-provedores.md`).
-2. **Bloco 2 (biblioteca base embarcada em camadas) concluído em 07/08/2026** na branch
-   `bloco2-biblioteca-base` (e419aa3, 8 tasks aprovadas + verificação final; plano em
-   `docs/superpowers/plans/2026-08-07-bloco2-biblioteca-base.md`) — pendente smoke manual e
-   decisão de merge. Ver "O que foi construído em 07/08 (Bloco 2)" abaixo.
-3. **Próxima frente: Bloco 3** (ingestão de acervo + aprendizado in-app) — plano ainda por
-   escrever. Em paralelo segue pendente a **Fase B da auditoria** — STATE-01 (`ReportSession`
-   canônica), SAFE-02 (patch JSON estruturado), QA-01 (golden set clínico) — plano SDD próprio
-   (decisão de 20/07; definições em `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
-4. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
+2. **Bloco 2 (biblioteca base embarcada em camadas) mergeado na main em 07/08/2026** (branch
+   `bloco2-biblioteca-base`, baa93a4, 8 tasks aprovadas + verificação final; plano em
+   `docs/superpowers/plans/2026-08-07-bloco2-biblioteca-base.md`) — smoke manual com GUI segue
+   pendente (ver "Pendências de teste").
+3. **Bloco 3 (acervo + aprendizado in-app) concluído em 07/08/2026** na branch
+   `bloco3-acervo-aprendizado` (base 51c4f13 → 16c8d84, 9 tasks aprovadas + verificação final;
+   plano em `docs/superpowers/plans/2026-08-07-bloco3-acervo-aprendizado.md`) — pendente smoke
+   manual com GUI (wizard completo, onboarding, Meu estilo, Reaprender) e decisão de merge. Ver
+   "O que foi construído em 07/08 (Bloco 3)" abaixo.
+4. **Próxima frente por definir.** Em paralelo segue pendente a **Fase B da auditoria** —
+   STATE-01 (`ReportSession` canônica), SAFE-02 (patch JSON estruturado), QA-01 (golden set
+   clínico) — plano SDD próprio (decisão de 20/07; definições em
+   `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
+5. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
    **validar o ditado segmentado com fala real** (itens novos em "Pendências de teste").
 
 ## O que o produto faz (funcionando)
@@ -46,7 +51,7 @@ npm run eval                  # golden set (13 casos) — acurácia de seleção
 npm run dev                   # app em dev (hot reload)
 npm run build:app             # compila renderer/main/preload
 npm run dist                  # gera instaladores (DMG + NSIS) em release/
-npm test                      # 178 testes (vitest)
+npm test                      # 331 testes (vitest)
 npm run typecheck
 
 # Curadoria da biblioteca (rodar quando entrarem laudos novos no acervo):
@@ -184,6 +189,63 @@ fica para o smoke com o usuário. Sanidade de camadas confirmada na prática: (a
 `app/biblioteca-base` absoluto, `laudo.config.json` real intocado) → `laudo masks` lista as
 mesmas 18, todas com `(base)`.
 
+## O que foi construído em 07/08 (Bloco 3 — acervo + aprendizado in-app)
+
+Executado via subagentes por task + review por task (B3-T1..T8, ledger em `.superpowers/sdd/progress.md`,
+plano em `docs/superpowers/plans/2026-08-07-bloco3-acervo-aprendizado.md`), branch
+`bloco3-acervo-aprendizado` (base 51c4f13):
+
+- **Extração local de texto** (`src/core/acervo/extrair.ts`): PDF (pdfjs-dist), DOCX (mammoth) e TXT,
+  sem binário externo e sem OCR (PDF só-imagem volta `sem-texto`, contabilizado, nunca descartado
+  em silêncio).
+- **Classificador determinístico** (`classificar.ts`): modalidade/exame/contraste/lateralidade por
+  CONTEÚDO (sem LLM, custo zero); tabela de sinônimos testada por frase inteira (resolve colisões
+  tipo "tornozelo e pé" vs "tornozelo" isolado); contraste por neutralização de negação de protocolo
+  + vocabulário de fases multifásicas; `agruparClusters` sugere a máscara-consenso. Regressão real
+  contra os 18 laudos da biblioteca do médico.
+- **Sanitização com proveniência** (`sanitizar.ts`): `sanitize()` do anonymizer reforçado pelo nome
+  extraído do arquivo original; grava com frontmatter (`exame`/`modalidade`/`contraste`/`origem_hash`/
+  `confianca`); nome do arquivo gravado NUNCA contém paciente (chave do cluster + data do nome
+  original, senão `s-d` — nunca a data de hoje).
+- **Núcleo de aprendizado** (`src/core/aprendizado/`): `destilarMascara`/`aprenderRegras`/`aplicarRascunho`/
+  `estimarCustoAprendizado`/`corpusPorArquivos`+`montarCorpus` (re-sanitização em profundidade antes
+  de qualquer LLM); rascunhos em `_rascunhos/` — nunca gravam direto na biblioteca; traversal fechado
+  via `validarNomeRascunho` (rejeita `/`, `\`, `.`, `..`, divergência de `basename()`) nos 5 pontos de
+  entrada (aplicar/descartar/ler/promover). CLI virou casca fina sobre o core.
+- **IPC main de acervo/aprendizado/rascunhos/estilo**: progresso por etapa e cancelamento entre itens
+  de um lote; core intocado pela camada Electron.
+- **Wizard de importação** (renderer `importar/`): 6 fases — seleção de arquivos → amostras +
+  consentimento explícito (único caminho para a etapa de custo; sem bypass) → custo estimado →
+  aprendizado com progresso → revisão de rascunhos → aplicar/descartar.
+- **Janela "Meu estilo"** (renderer `estilo/`): máscaras/regras/frasário em camadas (base × médico)
+  com editor (textarea) por arquivo; botão **"Reaprender com meus laudos"** monta o corpus de (a)
+  acervo existente + (b) NOVO — laudos do histórico com `laudoFinalEditado` no sidecar
+  (`corpusDoHistorico(outputDir, cap 40)`, peso de recência); dupla re-sanitização rastreada ponta a
+  ponta; diretórios temporários do corpus do histórico limpos em `finally` (sucesso/falha/cancelamento)
+  + sweep de órfãos no boot.
+- **Onboarding de 8 passos**: passo de inteligência + passo de importação de acervo (PULÁVEL);
+  progresso persistido (`versao` descarta passo salvo sob versão antiga); gate de chaves BYOK do
+  Bloco 1 intocado.
+- Suíte: 182 → **331 testes**. Gates (typecheck/build) verdes em todo commit.
+
+**Desvio registrado do spec:** a classificação de indecididos (documentos que o classificador
+determinístico não reconhece) por LLM ficou para o backlog — a v1 usa **rotulagem MANUAL** no
+wizard (dropdown de exames conhecidos + "deixar de fora"). Motivo: zero custo pré-consentimento,
+menos superfície de erro antes do médico decidir importar.
+
+**Verificação final (Task 9, 07/08/2026):** `npm test` (331/331) + `npm run typecheck` +
+`npm run build:app` verdes. `npx electron-builder --dir` empacotou com sucesso (Aerolince.app
+gerado em `release/mac-arm64/`; ambiente sem GUI — só o empacotamento foi conferido, o app não foi
+aberto). **Ensaio ponta-a-ponta sem LLM (custo zero)**, script descartável fora do repo: gerou 25
+`.txt` sintéticos de "TC DO CRÂNIO" com achados variados (nenhum dado real) → `extrairTexto`
+(25/25 ok) → `classificarDocumento`/`agruparClusters` (1 cluster `tc-cranio`, 25 arquivos) →
+`sanitizarParaAcervo` (0 findings, 0 suspeitos — sintético sem PII, nome do arquivo original não
+vazou) → `corpusPorArquivos`+`montarCorpus` (25 laudos, ~21 KB, frontmatter tolerado) →
+`estimarCustoAprendizado` (~5.778 tokens de entrada, ~US$ 0,055 — plausível) → `destilarMascara`
+com um LLM FAKE local (sem rede, custo zero) → rascunho gravado em `_rascunhos/tc-cranio.md` →
+`aplicarRascunho` → `loadLibrary` no `masksDir` temporário carregou a máscara nova sem erro. Os 8
+passos fecharam sem nenhum BUG do bloco.
+
 ## Pendências de teste (o médico precisa validar)
 
 - [x] Recolocar chaves na tela de Configurações e gerar um laudo (20/07, com botão Testar)
@@ -225,12 +287,23 @@ mesmas 18, todas com `(base)`.
       de falhar silenciosamente ("não tive certeza") e passa a somar 18 máscaras da base + as de
       `masks-exemplo` no catálogo — conferir se essa instalação (ou outra parecida) ainda existe
       e, se achar, re-apontar o `masksDir` para a biblioteca real do médico.
+- [ ] **Smoke manual do Bloco 3 (acervo + aprendizado in-app)** — gates automatizados
+      (test/typecheck/build/`electron-builder --dir`) e o ensaio ponta-a-ponta sem LLM passaram
+      07/08 (ver seção acima); falta NA MÁQUINA DO SALOMÃO: (a) **wizard de importação completo
+      com 20+ PDFs reais** (seleção → amostras+consentimento → custo → aprendizado → revisar
+      rascunhos → aplicar), **incluindo o custo REAL do LLM (~US$ 0,03–0,06 por máscara)**, não
+      só a estimativa; (b) **onboarding novo de 8 passos** do zero, com o passo de importação de
+      acervo pulado e depois feito; (c) janela **"Meu estilo"** (camadas base × médico, editor de
+      máscara/regras/frasário); (d) **"Reaprender com meus laudos"** (acervo + histórico com
+      `laudoFinalEditado`); (e) confirmar que o modo **"Só OpenAI"** (Bloco 1) continua íntegro
+      com o fluxo de aprendizado novo.
 
 ## Backlog priorizado (próximas frentes)
 
--1. **Bloco 3 (ingestão de acervo + aprendizado in-app)** — próxima frente do reposicionamento
-   após o Bloco 2 (07/08); plano ainda por escrever. Absorve/relaciona os itens 1 e 2 abaixo
-   (loop de feedback virando ajuste de regras; wizard de importação de PDFs dentro do app).
+-1. ~~Bloco 3 (ingestão de acervo + aprendizado in-app)~~ — **CONCLUÍDO 07/08/2026** (branch
+   `bloco3-acervo-aprendizado`, pendente smoke manual com GUI e decisão de merge; ver "O que foi
+   construído em 07/08 (Bloco 3)" acima). Resolveu os itens 1-3 antigos abaixo (mantidos riscados
+   por rastro histórico).
 0. **Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02 (patch JSON
    estruturado), QA-01 (golden set clínico reprodutível). Plano SDD próprio (decisão de 20/07).
 0b. **Dívida técnica triada no review final do áudio** (pequena, entra quando tocar os arquivos):
@@ -240,14 +313,25 @@ mesmas 18, todas com `(base)`.
    e2e no provider, "confirmação negada ⇒ nada apagado" no histórico); nota: retenção do
    histórico conta da **última edição** (mtime), não da geração; A/B de `gpt-4o-mini-transcribe`
    em shadow mode (proposta, Fase 2); handler de erro no middleware dev dos assets do VAD.
-1. **Aprendizado do loop de feedback** — hoje o app só COLETA a versão editada (sidecar:
-   `laudoGerado` vs `laudoFinalEditado`). Falta o passo que transforma isso em ajuste das
-   Regras/Frasário (ex.: comando `laudo aprender-feedback` que lê os diffs e sugere edições).
-2. **Wizard de importação de PDFs dentro do app** — hoje a curadoria é só por CLI
-   (`destilar`/`aprender`). Para outros médicos usarem, precisa da tela de importação
-   (selecionar PDFs → anonimizar → revisar → virar máscara).
-3. **Editor de frases dentro do app** — hoje "editar frases padrão" abre a pasta; ideal é
-   uma UI para editar máscaras/regras/frasário sem sair do app.
+0c. **Backlog novo do Bloco 3 (acervo + aprendizado)**, triado no review final (07/08):
+   - **OCR (tesseract)** — PDF só-imagem hoje volta `sem-texto` e é descartado da importação
+     (contabilizado, nunca em silêncio); OCR local destravaria esses arquivos sem sair do app.
+   - **Classificação de indecididos por LLM** — v1 usa rotulagem MANUAL no wizard (desvio
+     registrado acima); upgrade natural quando o custo/UX valer a pena.
+   - **Quase-duplicata de frasário (fuzzy dedup)** — herdado do Bloco 2: o dedup hoje é por
+     conteúdo EXATO; detectar duplicatas com pequenas edições fica para uma rodada futura.
+   - **Editor rico de máscara** — a janela "Meu estilo" (T7) tem um editor de textarea simples;
+     falta estrutura (campos por seção, preview, validação inline do frontmatter).
+   - **Cap 40 do "Reaprender com meus laudos" é POR MÁSCARA, não global** — hoje
+     `corpusDoHistorico(outputDir, cap 40)` aplica o cap a cada máscara individualmente; reaprender
+     várias máscaras de uma vez pode ler o histórico inteiro várias vezes sem um teto agregado.
+1. ~~Aprendizado do loop de feedback~~ — **resolvido pelo Bloco 3**: "Reaprender com meus laudos"
+   (janela Meu estilo, T7) já lê `laudoFinalEditado` do sidecar e alimenta o corpus de
+   destilar/aprender com peso de recência.
+2. ~~Wizard de importação de PDFs dentro do app~~ — **resolvido pelo Bloco 3**: wizard de 6 fases
+   em `renderer/importar/` (seleção → amostras+consentimento → custo → aprendizado → rascunhos).
+3. ~~Editor de frases dentro do app~~ — **resolvido (versão básica) pelo Bloco 3**: janela "Meu
+   estilo" edita máscaras/regras/frasário em camadas sem sair do app; versão rica fica no item 0c.
 4. **Colagem robusta em RIS** — se algum RIS bloquear colar formatado, avaliar RTF/HTML no
    clipboard (Electron suporta) ou digitação simulada.
 5. **Novos tipos de exame** — RM/US/RX (o schema de máscara já tem `modalidade`); repetir
