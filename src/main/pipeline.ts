@@ -21,6 +21,7 @@ import { Mask } from '../core/masks/schema.js';
 import { validarAudio } from '../core/stt/audio-guard.js';
 import { OpenAISTT, type STTProvider } from '../core/stt/openai.js';
 import { estimateSttCostUSD } from '../core/stt/pricing.js';
+import type { DiagnosticoAudio } from './audio/diagnostico.js';
 
 /** Telemetria do ditado segmentado (só no fluxo por voz; vai ao sidecar). */
 export interface TelemetriaAudio {
@@ -30,6 +31,9 @@ export interface TelemetriaAudio {
   uploadedBytes: number;
   segmentosStt: number;
   custoSttUSD?: number;
+  /** Diagnóstico de captura (VAD) — ver `src/main/audio/diagnostico.ts`. Ausente quando o
+   *  renderer não enviou (ex.: recovery de spool órfão no boot, sem sessão de renderer viva). */
+  diagnostico?: DiagnosticoAudio;
 }
 
 export interface ResultadoLaudo {
@@ -156,7 +160,7 @@ export async function transcreverConsolidado(
  */
 export async function processarAudioSegmentado(
   wavs: Buffer[],
-  tele: { capturedMs: number; speechMs: number; segmentosRecusados?: number },
+  tele: { capturedMs: number; speechMs: number; diagnostico?: DiagnosticoAudio },
 ): Promise<ResultadoPipeline> {
   const config = getConfig();
   exigirChaves(config);
@@ -172,6 +176,7 @@ export async function processarAudioSegmentado(
       uploadedBytes: t.uploadedBytes,
       segmentosStt: wavs.length,
       custoSttUSD: t.custoSttUSD,
+      diagnostico: tele.diagnostico,
     };
     // Reavalia `avisosDeCaptura` agora COM a telemetria de áudio (regras b e c —
     // só existem neste fluxo). A regra (a) recalculada aqui é idêntica à já
@@ -181,7 +186,7 @@ export async function processarAudioSegmentado(
       palavrasDitadas: contarPalavras(res.transcript),
       blocosAlterados: res.blocosAlterados,
       audio: res.audio,
-      segmentosRecusados: tele.segmentosRecusados,
+      segmentosRecusados: tele.diagnostico?.segmentosRecusados,
     });
     res.avisos = dedupAvisos(res.avisos, avisosComAudio);
   }

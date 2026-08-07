@@ -21,6 +21,9 @@ export interface OpcoesCaptura {
   aoFalar(): void;
   aoSilenciar(): void;
   aoSegmento(pcm: Int16Array, durationMs: number): void;
+  /** onVADMisfire: início de fala detectado, mas curto demais (< minSpeechMs) — vira ruído
+   *  descartado, não um segmento. Contado à parte de `aoSilenciar` para o diagnóstico. */
+  aoMisfire(): void;
 }
 
 // Usar a expressão EXATA validada no spike da Task 1 (assets 100% locais, sem CDN,
@@ -40,7 +43,10 @@ export async function iniciarCapturaVad(opts: OpcoesCaptura): Promise<CapturaVad
     minSpeechMs: params.minSpeechMs, // estalos/cliques não viram segmento
     submitUserSpeechOnPause: true, // parar() no meio de uma fala flusha o trecho via onSpeechEnd
     onSpeechStart: () => opts.aoFalar(),
-    onVADMisfire: () => opts.aoSilenciar(),
+    onVADMisfire: () => {
+      opts.aoSilenciar();
+      opts.aoMisfire();
+    },
     onSpeechEnd: (audio: Float32Array) => {
       opts.aoSilenciar();
       const pcm = float32ParaInt16(audio); // novo array → .buffer tem o tamanho exato

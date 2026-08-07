@@ -3,8 +3,9 @@ import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
 import './float.css';
 import { SimboloA } from '../shared/SimboloA.js';
-import type { RendererConfig } from '../shared/types.js';
+import type { RendererConfig, SensibilidadeVad } from '../shared/types.js';
 import { iniciarCapturaVad, type CapturaVad } from './captura-vad.js';
+import { montarDiagnostico, type CapacidadesAudio } from './diagnostico-vad.js';
 
 type Fase = 'idle' | 'ouvindo' | 'falando' | 'gravando' | 'processando' | 'ok' | 'erro';
 
@@ -55,6 +56,38 @@ async function aguardarEnviosPendentes(envios: Promise<unknown>[]): Promise<void
   }
 }
 
+/**
+ * Capacidades do ambiente de áudio, colhidas no renderer para o diagnóstico do
+ * sidecar (objetivo de campo: descobrir ONDE a fala se perde). Este `AudioContext`
+ * é só para ler `sampleRate`/suporte a `audioWorklet` do ambiente — não é o mesmo
+ * contexto que o `MicVAD` cria internamente, então `audioWorkletDisponivel` é uma
+ * capacidade do ambiente (candidato a explicar um fallback pro ScriptProcessor
+ * com quadro de 480 em vez dos 512 do modelo v5), não necessariamente o que o VAD
+ * escolheu de fato. `enumerateDevices` só devolve `label` depois que alguma
+ * permissão de microfone já foi concedida (o VAD já pediu a dele antes desta
+ * função ser chamada).
+ */
+async function coletarCapacidadesAudio(): Promise<CapacidadesAudio> {
+  let sampleRateNativo: number | null = null;
+  let audioWorkletDisponivel = false;
+  try {
+    const ctx = new AudioContext();
+    sampleRateNativo = ctx.sampleRate;
+    audioWorkletDisponivel = typeof ctx.audioWorklet !== 'undefined';
+    void ctx.close();
+  } catch {
+    // Sem AudioContext (não deveria acontecer no Electron) — segue com null.
+  }
+  let microfone: string | null = null;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    microfone = devices.find((d) => d.kind === 'audioinput')?.label || null;
+  } catch {
+    // Sem permissão/API de enumeração — nome do dispositivo é só diagnóstico, segue com null.
+  }
+  return { sampleRateNativo, audioWorkletDisponivel, microfone };
+}
+
 function Icone({ fase }: { fase: Fase }) {
   // Sessão ativa e gravando clássico mostram o mesmo "parar" (clique encerra); o CSS diferencia.
   if (fase === 'gravando' || fase === 'ouvindo' || fase === 'falando') return <span className="parar" />;
@@ -87,6 +120,13 @@ function App() {
   // isto, o ÚLTIMO trecho dito (bem na hora de clicar para parar) pode chegar depois do
   // encerramento e ser descartado. Ver `encerrarSessao`.
   const enviosEmVoo = useRef<Promise<unknown>[]>([]);
+  // Diagnóstico de captura (VAD) desta sessão — vira `audio.diagnostico` no sidecar.
+  // Objetivo: responder, no próximo ditado real, ONDE a fala se perde.
+  const segmentosVadEmitidos = useRef(0);
+  const segmentosAceitos = useRef(0);
+  const misfires = useRef(0);
+  const sensibilidadeAtual = useRef<SensibilidadeVad>('media');
+  const capacidadesAudio = useRef<CapacidadesAudio | null>(null);
   const semCofre = useRef(false);
   // Geração da sessão: cresce a cada início/encerramento/cancelamento. Evita microfone
   // aberto se o usuário encerrar/cancelar enquanto o VAD ainda carrega o modelo.
@@ -136,6 +176,11 @@ function App() {
       inicioFala.current = null;
       segmentosRecusados.current = 0;
       enviosEmVoo.current = [];
+      segmentosVadEmitidos.current = 0;
+      segmentosAceitos.current = 0;
+      misfires.current = 0;
+      sensibilidadeAtual.current = config.stt.sensibilidadeVad;
+      capacidadesAudio.current = null;
       setFase('ouvindo');
       setSegundos(0);
       if (timer.current) clearInterval(timer.current);
@@ -151,14 +196,20 @@ function App() {
           inicioFala.current = null;
           setFase((f) => (f === 'falando' ? 'ouvindo' : f));
         },
+        aoMisfire: () => {
+          misfires.current++;
+        },
         aoSegmento: (pcm, ms) => {
           falaMs.current += ms;
+          segmentosVadEmitidos.current++;
           // Não ignora a recusa: um segmento recusado (ex.: acima do cap) é contado e
           // repassado a `sessaoEncerrar` — vira aviso visível no resultado, em vez de
           // sumir em silêncio. A promessa fica em `enviosEmVoo` até resolver — ver
           // `encerrarSessao`, que espera por todas antes de encerrar a sessão no main.
           const envio = window.aerolince.sessaoSegmento(pcm.buffer as ArrayBuffer, ms).then((r) => {
-            if (!r.ok) {
+            if (r.ok) {
+              segmentosAceitos.current++;
+            } else {
               segmentosRecusados.current++;
               console.warn('[aerolince] segmento recusado:', r.erro);
             }
@@ -173,6 +224,12 @@ function App() {
         return;
       }
       captura.current = cap;
+      // Fire-and-forget: o VAD já pediu (e recebeu) a permissão de microfone, então
+      // `enumerateDevices` já devolve o label aqui. Não bloqueia a UI — se o médico
+      // encerrar antes disto resolver, `encerrarSessao` só envia capacidades nulas.
+      void coletarCapacidadesAudio().then((c) => {
+        capacidadesAudio.current = c;
+      });
     } catch (e) {
       // Defesa: se por algum caminho já havia uma captura viva (ex.: sessão anterior ainda ativa
       // quando `sessaoIniciar` recusa), fecha o microfone antes de descartar a referência.
@@ -208,7 +265,17 @@ function App() {
     enviosEmVoo.current = [];
     await aguardarEnviosPendentes(envios);
     setFase('processando');
-    const r = await window.aerolince.sessaoEncerrar(segmentosRecusados.current);
+    const diagnostico = montarDiagnostico(
+      {
+        segmentosVadEmitidos: segmentosVadEmitidos.current,
+        segmentosAceitos: segmentosAceitos.current,
+        segmentosRecusados: segmentosRecusados.current,
+        misfires: misfires.current,
+      },
+      sensibilidadeAtual.current,
+      capacidadesAudio.current ?? { sampleRateNativo: null, audioWorkletDisponivel: false, microfone: null },
+    );
+    const r = await window.aerolince.sessaoEncerrar(diagnostico);
     // {ok:false,'Nenhum ditado em andamento.'} NÃO emite evento 'estado' e deixaria 'processando'
     // travado para sempre. Só destrava se nenhum 'estado' tirou a fase de 'processando' — o erro
     // real do pipeline já emitiu 'estado'('erro') (também retorna ok:false) e não deve ser sobrescrito.

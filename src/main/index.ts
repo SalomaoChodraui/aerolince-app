@@ -41,6 +41,7 @@ import {
   rodarAprendizado,
   salvarEstilo,
 } from './aprendizado.js';
+import { validarDiagnostico, type DiagnosticoAudio } from './audio/diagnostico.js';
 import { recuperarSpoolOrfao } from './audio/recovery.js';
 import { SessaoAudio } from './audio/sessao.js';
 import {
@@ -515,18 +516,15 @@ function registrarIpc(): void {
   // Encerrar: finaliza a sessão → pipeline segmentado → descarta o spool só no
   // sucesso. Em erro, replica o tratamento do handler 'processar-audio' vizinho
   // (estado 'erro' + evento 'resultado-erro') e PRESERVA o spool p/ recovery (Task 11).
-  ipcMain.handle('sessao-encerrar', async (_e, segmentosRecusados: unknown) => {
+  ipcMain.handle('sessao-encerrar', async (_e, diagnosticoBruto: unknown) => {
     const fin = sessaoAudio.finalizar();
     if (!fin) return { ok: false, erro: 'Nenhum ditado em andamento.' };
-    // Fronteira IPC: telemetria nunca deve travar a entrega do laudo — um valor
-    // fora do esperado apenas vira 0 (sem aviso de recusa), nunca um erro.
-    const recusas =
-      typeof segmentosRecusados === 'number' && Number.isFinite(segmentosRecusados) && segmentosRecusados >= 0
-        ? Math.round(segmentosRecusados)
-        : 0;
+    // Fronteira IPC: telemetria nunca deve travar a entrega do laudo — um payload
+    // fora do esperado apenas vira null (sem diagnóstico anexado), nunca um erro.
+    const diagnostico = validarDiagnostico(diagnosticoBruto);
     estado('processando');
     try {
-      await gerarDeSegmentos(fin.segmentos, fin.capturedMs, fin.speechMs, recusas);
+      await gerarDeSegmentos(fin.segmentos, fin.capturedMs, fin.speechMs, diagnostico);
       fin.spool?.descartar(); // só após sucesso; em erro fica p/ recovery no boot (≤48 h)
       return { ok: true };
     } catch (err) {
@@ -709,12 +707,12 @@ async function gerarDeSegmentos(
   segmentos: Int16Array[],
   capturedMs: number,
   speechMs: number,
-  segmentosRecusados = 0,
+  diagnostico: DiagnosticoAudio | null = null,
 ): Promise<void> {
   const grupos = particionarPorBytes(segmentos, MAX_AUDIO_BYTES);
   const wavs = grupos.map((g) => encodeWavPcm16(consolidarSegmentos(g).pcm));
   if (wavs.length === 0) wavs.push(encodeWavPcm16(new Int16Array(0)));
-  const res = await processarAudioSegmentado(wavs, { capturedMs, speechMs, segmentosRecusados });
+  const res = await processarAudioSegmentado(wavs, { capturedMs, speechMs, diagnostico: diagnostico ?? undefined });
   // Mesma bifurcação de entregar()/confirmar-mascara do wrapper processar().
   if (res.tipo === 'confirmar-mascara') {
     resultWin?.webContents.send('confirmar-mascara', res);

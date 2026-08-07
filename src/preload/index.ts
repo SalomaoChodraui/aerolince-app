@@ -3,6 +3,23 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 type Resp = { ok: boolean; erro?: string };
 type StatusCofre = { cofreDisponivel: boolean; chaves: Record<string, 'ok' | 'invalida' | 'ausente'> };
 
+// Diagnóstico do ditado segmentado (VAD) — mirror local do shape validado em
+// `src/main/audio/diagnostico.ts` (o preload não importa main/renderer, por convenção).
+type DiagnosticoVadIpc = {
+  segmentosVadEmitidos: number;
+  segmentosAceitos: number;
+  segmentosRecusados: number;
+  misfires: number;
+  sensibilidade: string;
+  positiveSpeechThreshold: number;
+  negativeSpeechThreshold: number;
+  minSpeechMs: number;
+  preSpeechPadMs: number;
+  sampleRateNativo: number | null;
+  audioWorkletDisponivel: boolean;
+  microfone: string | null;
+};
+
 // Acervo / aprendizado (Bloco 3)
 type ClusterImportacao = {
   chave: string;
@@ -49,11 +66,12 @@ const api = {
     ipcRenderer.invoke('sessao-iniciar'),
   sessaoSegmento: (pcm: ArrayBuffer, durationMs: number): Promise<Resp> =>
     ipcRenderer.invoke('sessao-segmento', pcm, durationMs),
-  // `segmentosRecusados`: quantos trechos o VAD emitiu mas o main recusou nesta
-  // sessão — o médico precisa ver isso no laudo (aviso em `avisosDeCaptura`),
-  // não sumir em silêncio.
-  sessaoEncerrar: (segmentosRecusados: number): Promise<Resp> =>
-    ipcRenderer.invoke('sessao-encerrar', segmentosRecusados),
+  // `diagnostico`: contadores da sessão (emitidos/aceitos/recusados/misfires),
+  // sensibilidade + thresholds efetivos e capacidades do ambiente de áudio — vira
+  // `audio.diagnostico` no sidecar e também alimenta o aviso de recusa no laudo
+  // (`avisosDeCaptura`). Nunca trava a entrega: payload inválido só some do sidecar.
+  sessaoEncerrar: (diagnostico: DiagnosticoVadIpc): Promise<Resp> =>
+    ipcRenderer.invoke('sessao-encerrar', diagnostico),
   sessaoCancelar: (): Promise<Resp> => ipcRenderer.invoke('sessao-cancelar'),
 
   desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),
