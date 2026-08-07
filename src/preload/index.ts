@@ -27,7 +27,12 @@ type Rascunho = { arquivo: string; tipo: 'mascara' | 'regras'; alvo: string };
 type ItemEstiloMascara = { id: string; nome: string; origemEfetiva: 'base' | 'minha' };
 type ItemEstilo = { nome: string; origemEfetiva: 'base' | 'minha' };
 type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: ItemEstilo[]; frasario: ItemEstilo[] };
-type ResumoReaprender = { alvos: AlvoAprendizado[]; semArquivos: { maskId: string; nome: string }[] };
+type ResumoReaprender = {
+  alvos: AlvoAprendizado[];
+  semArquivos: { maskId: string; nome: string }[];
+  temHistorico: boolean;
+  amostras: { arquivo: string; texto: string }[];
+};
 
 const api = {
   // Pipeline

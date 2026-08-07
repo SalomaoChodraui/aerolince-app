@@ -97,8 +97,9 @@ function contadoresExistentes(acervoDir: string): Map<string, number> {
   return contagem;
 }
 
-/** Escolhe até `n` itens ao acaso, sem repetição. */
-function amostraAleatoria<T>(itens: T[], n: number): T[] {
+/** Escolhe até `n` itens ao acaso, sem repetição. Reusada por `montarAlvosReaprender` (I3) para as
+ *  amostras do consentimento do "Reaprender" — mesmo critério das amostras da importação normal. */
+export function amostraAleatoria<T>(itens: T[], n: number): T[] {
   const copia = [...itens];
   const escolhidos: T[] = [];
   while (copia.length > 0 && escolhidos.length < n) {

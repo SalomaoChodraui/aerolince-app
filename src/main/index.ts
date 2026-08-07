@@ -30,6 +30,7 @@ import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
 import { escolherArquivosAcervo, importarAcervo } from './acervo.js';
 import {
   AlvoAprendizado,
+  aprendizadoEmExecucao,
   cancelarAprendizado,
   estimarAprendizado,
   lerEstilo,
@@ -158,6 +159,7 @@ function abrirAux(
   page: string,
   opts: { width: number; height: number; title: string },
   query?: Record<string, string>,
+  aoFechar?: () => void,
 ): void {
   if (ref && !ref.isDestroyed()) {
     ref.show();
@@ -173,7 +175,10 @@ function abrirAux(
     vibrancy: vibrancyDe(c),
     webPreferences: { preload, sandbox: false },
   });
-  win.on('closed', () => set(null));
+  win.on('closed', () => {
+    set(null);
+    aoFechar?.();
+  });
   loadPage(win, page, query);
   set(win);
 }
@@ -211,6 +216,16 @@ function abrirImportar(opts?: { modo?: 'reaprender' }): void {
       title: modo === 'reaprender' ? 'Aerolince — Reaprender com meus laudos' : 'Aerolince — Importar meus laudos',
     },
     modo ? { modo } : undefined,
+    () => {
+      // I2(b): fechar a janela de importação varre tempdirs órfãos do corpus do histórico
+      // (Reaprender) que não chegaram a ser lidos por `rodarAprendizado` — ex.: o gate de
+      // chaves falhou e o médico fechou a janela em vez de configurar a chave e tentar de
+      // novo (esses tempdirs agora SOBREVIVEM a essa falha, ver `rodarAprendizado`/I2). Só
+      // varre se não houver um lote em andamento AGORA (`aprendizadoEmExecucao`) — fechar a
+      // janela não cancela a promise do IPC 'aprendizado-rodar' em voo no processo main, e
+      // varrer no meio de uma execução real apagaria um tempdir que ainda está sendo lido.
+      if (!aprendizadoEmExecucao()) limparCorpusHistoricoOrfao();
+    },
   );
 }
 function abrirEstilo(): void {

@@ -26,15 +26,31 @@ function ajustar(provider: 'anthropic' | 'openai', modelo: string, papel: keyof 
   return incompativel ? MODELOS_PADRAO[provider][papel] : modelo;
 }
 
+/**
+ * Modelos efetivos (mesmo ajuste de compatibilidade de `criarLLM`) SEM instanciar
+ * nenhum provider — não exige nenhuma chave configurada. Usado por estimativas de
+ * custo (`estimarAprendizado`) que precisam bater com o modelo que a EXECUÇÃO de
+ * fato vai usar (`criarLLM`), sem lançar quando o BYOK ainda não foi configurado
+ * (o provedor 'openai' lança na própria construção do client sem chave) — antes,
+ * a estimativa usava `config.llm.generationModel` cru, ignorando o ajuste de
+ * compatibilidade (M4): podia mostrar um custo baseado num modelo que a execução
+ * jamais usaria de verdade (ex.: um `claude-*` salvo enquanto o provider era
+ * 'anthropic', depois trocado para 'openai' sem atualizar o campo).
+ */
+export function modelosDe(config: Config): LLMResolvido['modelos'] {
+  const p = config.llm.provider;
+  return {
+    selecao: ajustar(p, config.llm.selectionModel, 'selecao'),
+    geracao: ajustar(p, config.llm.generationModel, 'geracao'),
+    rapido: ajustar(p, config.llm.fastModel, 'rapido'),
+  };
+}
+
 export function criarLLM(config: Config): LLMResolvido {
   const p = config.llm.provider;
   return {
     llm: p === 'openai' ? new OpenAIProvider() : new LLMClient(),
-    modelos: {
-      selecao: ajustar(p, config.llm.selectionModel, 'selecao'),
-      geracao: ajustar(p, config.llm.generationModel, 'geracao'),
-      rapido: ajustar(p, config.llm.fastModel, 'rapido'),
-    },
+    modelos: modelosDe(config),
   };
 }
 

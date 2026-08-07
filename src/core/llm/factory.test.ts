@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigSchema } from '../config/schema.js';
 import { LLMClient } from './anthropic.js';
 import { OpenAIProvider } from './openai.js';
-import { chavesNecessarias, criarLLM, MODELOS_PADRAO } from './factory.js';
+import { chavesNecessarias, criarLLM, MODELOS_PADRAO, modelosDe } from './factory.js';
 
 function cfg(llm: Record<string, unknown>) {
   return ConfigSchema.parse({
@@ -48,6 +48,23 @@ describe('criarLLM', () => {
   it('provider anthropic com modelo gpt-* volta ao default claude', () => {
     const r = criarLLM(cfg({ provider: 'anthropic', generationModel: 'gpt-5-mini' }));
     expect(r.modelos.geracao).toBe('claude-haiku-4-5');
+  });
+});
+
+describe('modelosDe (M4 — mesmo ajuste de criarLLM, sem exigir chave nenhuma)', () => {
+  it('sem NENHUMA chave configurada (nem stub de env) não lança — estimativa precisa rodar sem BYOK', () => {
+    expect(() => modelosDe(cfg({ provider: 'openai' }))).not.toThrow();
+  });
+
+  it('bate exatamente com r.modelos de criarLLM para o mesmo config (provider openai)', () => {
+    vi.stubEnv('OPENAI_API_KEY', 'chave-falsa-de-teste');
+    const c = cfg({ provider: 'openai', generationModel: 'gpt-5' });
+    expect(modelosDe(c)).toEqual(criarLLM(c).modelos);
+  });
+
+  it('bate exatamente com r.modelos de criarLLM para o mesmo config (provider anthropic, modelo incompatível)', () => {
+    const c = cfg({ provider: 'anthropic', generationModel: 'gpt-5-mini' });
+    expect(modelosDe(c)).toEqual(criarLLM(c).modelos);
   });
 });
 

@@ -30,6 +30,7 @@ type Rascunho = Awaited<ReturnType<typeof api.rascunhosListar>>[number];
 type ProgressoAcervo = Parameters<Parameters<typeof api.onAcervoProgresso>[0]>[0];
 type ProgressoAprendizado = Parameters<Parameters<typeof api.onAprendizadoProgresso>[0]>[0];
 type MascaraConhecida = Awaited<ReturnType<typeof api.estiloListar>>['mascaras'][number];
+type AmostraSanitizada = ResumoImportacao['amostras'][number];
 
 type Fase = 'selecionar' | 'processando' | 'revisar' | 'custo' | 'rodando' | 'rascunhos';
 
@@ -141,6 +142,54 @@ function montarPlano(resumo: ResumoImportacao, decisoes: Record<string, string>)
   return { alvos: [...destilar, ...aprender], fora, totalLaudos };
 }
 
+/**
+ * Amostras sanitizadas + checkbox de consentimento — usado na fase "revisar" da importação
+ * normal E na fase "custo" do Reaprender quando o corpus inclui histórico editado (I3): o
+ * médico nunca viu nem autorizou explicitamente o envio desse corpus específico antes (ao
+ * contrário do acervo, já consentido na importação original). Texto e comportamento IDÊNTICOS
+ * nos dois lugares — um único componente evita que os dois textos divirjam com o tempo.
+ */
+function AmostrasConsentimento({
+  amostras,
+  consentimento,
+  onConsentimentoChange,
+}: {
+  amostras: AmostraSanitizada[];
+  consentimento: boolean;
+  onConsentimentoChange: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <div className="secao">
+        <h2>Amostras sanitizadas (revise antes de autorizar)</h2>
+        <div className="imp-amostras">
+          {amostras.map((a) => (
+            <div className="imp-amostra" key={a.arquivo}>
+              <div className="imp-amostra-nome">{a.arquivo}</div>
+              <pre>{a.texto}</pre>
+            </div>
+          ))}
+          {amostras.length === 0 && (
+            <div className="desc">Nenhuma amostra disponível (nenhum arquivo foi gravado no acervo).</div>
+          )}
+        </div>
+      </div>
+      <div className="imp-consent">
+        <input
+          id="consentimento"
+          type="checkbox"
+          checked={consentimento}
+          onChange={(e) => onConsentimentoChange(e.target.checked)}
+        />
+        <label htmlFor="consentimento">
+          Revisei as amostras acima; autorizo o envio do texto anonimizado para a minha chave de API para
+          aprendizado do meu estilo.
+        </label>
+      </div>
+    </>
+  );
+}
+
 function App() {
   const [fase, setFase] = useState<Fase>('selecionar');
 
@@ -152,6 +201,11 @@ function App() {
   );
   const [carregandoReaprender, setCarregandoReaprender] = useState(false);
   const [erroReaprender, setErroReaprender] = useState<string | null>(null);
+  // I3: o corpus do Reaprender inclui histórico editado → exige o MESMO consentimento da
+  // importação normal (amostras + checkbox) antes de liberar "Aprender meu estilo", porque
+  // esse corpus específico nunca passou pela revisão do médico nesta janela.
+  const [precisaConsentimentoReaprender, setPrecisaConsentimentoReaprender] = useState(false);
+  const [amostrasReaprender, setAmostrasReaprender] = useState<AmostraSanitizada[]>([]);
 
   // Passo 1 — seleção
   const [arquivos, setArquivos] = useState<string[]>([]);
@@ -214,6 +268,11 @@ function App() {
       const totalLaudos = alvos.reduce((soma, a) => soma + a.arquivos.length, 0);
       const p: Plano = { alvos, fora, totalLaudos };
       setPlano(p);
+      // I3: só exige o passo de consentimento quando o corpus de fato inclui histórico editado
+      // — se for só acervo, o médico já autorizou esse mesmo texto na importação original.
+      setPrecisaConsentimentoReaprender(resumoAlvos.temHistorico);
+      setAmostrasReaprender(resumoAlvos.amostras);
+      setConsentimento(false);
       setFase('custo');
       await buscarEstimativa(p.alvos);
     } catch (e) {
@@ -365,6 +424,8 @@ function App() {
     setModoReaprender(false);
     setErroReaprender(null);
     setCarregandoReaprender(false);
+    setPrecisaConsentimentoReaprender(false);
+    setAmostrasReaprender([]);
     setFase('selecionar');
     setArquivos([]);
     setErroImportacao(null);
@@ -531,38 +592,26 @@ function App() {
               </div>
             )}
 
-            <div className="secao">
-              <h2>Amostras sanitizadas (revise antes de autorizar)</h2>
-              <div className="imp-amostras">
-                {resumo.amostras.map((a) => (
-                  <div className="imp-amostra" key={a.arquivo}>
-                    <div className="imp-amostra-nome">{a.arquivo}</div>
-                    <pre>{a.texto}</pre>
-                  </div>
-                ))}
-                {resumo.amostras.length === 0 && (
-                  <div className="desc">Nenhuma amostra disponível (nenhum arquivo foi gravado no acervo).</div>
-                )}
-              </div>
-            </div>
-
-            <div className="imp-consent">
-              <input
-                id="consentimento"
-                type="checkbox"
-                checked={consentimento}
-                onChange={(e) => setConsentimento(e.target.checked)}
-              />
-              <label htmlFor="consentimento">
-                Revisei as amostras acima; autorizo o envio do texto anonimizado para a minha chave de API para
-                aprendizado do meu estilo.
-              </label>
-            </div>
+            <AmostrasConsentimento
+              amostras={resumo.amostras}
+              consentimento={consentimento}
+              onConsentimentoChange={setConsentimento}
+            />
           </>
         )}
 
         {fase === 'custo' && plano && (
           <>
+            {/* I3: corpus do Reaprender inclui histórico editado, nunca revisado nesta janela
+                (ao contrário do acervo, já consentido na importação original) — mesmas amostras
+                e checkbox da fase "revisar", bloqueando "Aprender meu estilo" até marcar. */}
+            {modoReaprender && precisaConsentimentoReaprender && plano.alvos.length > 0 && (
+              <AmostrasConsentimento
+                amostras={amostrasReaprender}
+                consentimento={consentimento}
+                onConsentimentoChange={setConsentimento}
+              />
+            )}
             {plano.alvos.length === 0 ? (
               <div className="imp-vazio">
                 {modoReaprender
@@ -745,7 +794,12 @@ function App() {
             <button
               className="primario"
               onClick={iniciarAprendizado}
-              disabled={plano.alvos.length === 0 || estimando || !!erroEstimativa}
+              disabled={
+                plano.alvos.length === 0 ||
+                estimando ||
+                !!erroEstimativa ||
+                (modoReaprender && precisaConsentimentoReaprender && !consentimento)
+              }
             >
               Aprender meu estilo
             </button>

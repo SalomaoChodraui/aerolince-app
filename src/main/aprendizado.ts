@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
+import { corpoDoArquivo } from '../core/acervo/sanitizar.js';
 import { sanitize } from '../core/anonymizer/anonymizer.js';
 import { writeFileAtomicSync } from '../core/atomic-write.js';
 import { validarNomeRascunho } from '../core/aprendizado/aplicar.js';
@@ -22,9 +23,10 @@ import { corpusPorArquivos, corpusPorPrefixos, montarCorpus } from '../core/apre
 import { estimarCustoAprendizado } from '../core/aprendizado/custo.js';
 import { destilarMascara } from '../core/aprendizado/destilar.js';
 import type { Config } from '../core/config/schema.js';
-import { criarLLM } from '../core/llm/factory.js';
+import { criarLLM, modelosDe } from '../core/llm/factory.js';
 import { bibliotecasDe, loadLibrary } from '../core/masks/library.js';
 import { MaskFrontmatterSchema } from '../core/masks/schema.js';
+import { amostraAleatoria } from './acervo.js';
 import { exigirChaves } from './pipeline.js';
 
 export interface AlvoAprendizado {
@@ -45,6 +47,20 @@ function maxTokensDe(tipo: AlvoAprendizado['tipo']): number {
   return tipo === 'destilar' ? MAX_TOKENS_DESTILAR : MAX_TOKENS_APRENDER;
 }
 
+// Cap de laudos por alvo efetivamente enviados a um LLM — mesmo valor usado pelo `laudo
+// aprender todos` da CLI (`corpus.ts`) e por `montarAlvosReaprender`. `montarAlvosReaprender`
+// já aplica este cap ao montar seus alvos, mas o wizard de importação normal (T6) NÃO cap(a)
+// os arquivos de um cluster antes de montar `AlvoAprendizado` — um cluster grande (ex.: 500+
+// laudos de abdome) ia inteiro para a estimativa e para a execução (I1). Aplicado no MESMO
+// ponto (`arquivosComCap`) tanto por `estimarAprendizado` quanto por `rodarAprendizado`, para a
+// estimativa nunca mentir sobre o corpus que de fato será enviado.
+const CAP_ARQUIVOS_POR_ALVO = 60;
+
+/** Últimos `CAP_ARQUIVOS_POR_ALVO` arquivos de um alvo (peso de recência) — ver `CAP_ARQUIVOS_POR_ALVO`. */
+function arquivosComCap(arquivos: string[]): string[] {
+  return corpusPorArquivos(arquivos, CAP_ARQUIVOS_POR_ALVO);
+}
+
 export interface EstimativaAprendizado {
   porAlvo: { chave: string; custoAproxUSD: number | null }[];
   totalUSD: number | null;
@@ -52,16 +68,20 @@ export interface EstimativaAprendizado {
 
 /**
  * Estimativa de custo ANTES de qualquer chamada de LLM — só lê os arquivos
- * localmente (via `corpusPorArquivos`/`montarCorpus`, reuso do core). NÃO exige
- * chaves configuradas: usa `config.llm.generationModel` diretamente em vez de
- * `criarLLM` (que, no provedor 'openai', lança se a chave estiver ausente —
- * comportamento indesejado numa estimativa que deve funcionar sem BYOK).
+ * localmente (via `corpusPorArquivos`/`montarCorpus`, reuso do core), já com o
+ * MESMO cap (`arquivosComCap`) aplicado pela execução (I1) — sem isso, um
+ * cluster grande estourava a estimativa (e o corpus real enviado ao LLM) bem
+ * além do que o médico via na tela de custo. NÃO exige chaves configuradas:
+ * usa `modelosDe` (ajuste de compatibilidade puro, sem instanciar provider)
+ * em vez de `criarLLM` (que, no provedor 'openai', lança se a chave estiver
+ * ausente — comportamento indesejado numa estimativa que deve funcionar sem
+ * BYOK) — mesmo modelo que `rodarAprendizado` de fato vai usar (M4).
  */
 export function estimarAprendizado(alvos: AlvoAprendizado[], config: Config): EstimativaAprendizado {
-  const modelo = config.llm.generationModel;
+  const modelo = modelosDe(config).geracao;
   const porAlvo = alvos.map((alvo) => {
     try {
-      const arquivos = corpusPorArquivos(alvo.arquivos, alvo.arquivos.length);
+      const arquivos = arquivosComCap(alvo.arquivos);
       const { corpus } = montarCorpus(arquivos);
       const bytes = Buffer.byteLength(corpus, 'utf8');
       const { custoAproxUSD } = estimarCustoAprendizado(bytes, modelo, maxTokensDe(alvo.tipo));
@@ -85,6 +105,14 @@ export function cancelarAprendizado(): void {
   canceladoFlag = true;
 }
 
+/** Há um lote de `rodarAprendizado` em andamento agora? Usado pelo `main/index.ts` para NÃO
+ *  varrer tempdirs do corpus do histórico (`limparCorpusHistoricoOrfao`) enquanto um lote real
+ *  ainda pode estar lendo algum deles — evitaria uma corrida rara (ENOENT no meio da leitura)
+ *  se a janela de importação fechasse durante uma execução em segundo plano (I2). */
+export function aprendizadoEmExecucao(): boolean {
+  return emExecucao;
+}
+
 export interface ResultadoAprendizadoLote {
   ok: { chave: string; arquivo: string; custoUSD: number }[];
   falhas: { chave: string; erro: string }[];
@@ -101,12 +129,23 @@ export interface ResultadoAprendizadoLote {
  * checado ali antes da chamada ao LLM) e sua falha entra em `falhas` como
  * qualquer outra. Falha de um alvo isolado nunca interrompe os demais.
  *
+ * Cada `alvo.arquivos` passa por `arquivosComCap` (I1) ANTES de ir para
+ * `destilarMascara`/`aprenderRegras` — mesmo cap e mesmo ponto usado por
+ * `estimarAprendizado`, então a estimativa mostrada ao médico bate com o
+ * corpus de fato enviado (o wizard de importação normal, ao contrário de
+ * `montarAlvosReaprender`, não capava os arquivos de um cluster antes).
+ *
  * Higiene de privacidade: se algum `alvo.arquivos` vier de `corpusDoHistorico`
  * (Reaprender — arquivos temporários fora de `outputDir`), esses diretórios
  * são apagados no `finally`, DEPOIS que todo o lote terminou (sucesso, falha
  * OU cancelamento — o corpus já foi lido por `montarCorpus` a essa altura, não
- * precisa sobreviver). Cobre também a falha do gate `exigirChaves`: nada de
- * lixo permanente em `tmpdir()` mesmo se o BYOK não estiver configurado.
+ * precisa sobreviver) — MAS só se o gate `exigirChaves` passou (`leuCorpus`):
+ * se ele falhar ANTES do laço, o corpus nunca chegou a ser lido, e apagar os
+ * tempdirs aqui deixaria um retry (depois de configurar a chave, com o MESMO
+ * plano montado na tela) achando ENOENT (I2). Quem cobre esse caso (chave
+ * nunca configurada, médico fecha a janela em vez de tentar de novo) é o
+ * sweep de `limparCorpusHistoricoOrfao` — chamado no boot e no `closed` da
+ * janela de importação (`main/index.ts`).
  */
 export async function rodarAprendizado(
   alvos: AlvoAprendizado[],
@@ -116,8 +155,10 @@ export async function rodarAprendizado(
   if (emExecucao) throw new Error('já existe um aprendizado em andamento — aguarde terminar ou cancele antes de iniciar outro');
   const tempDirsHistorico = tempDirsDoCorpusHistorico(alvos);
   emExecucao = true;
+  let leuCorpus = false; // só vira true DEPOIS que o gate de chaves passa (ver docstring)
   try {
     exigirChaves(config); // gate ANTES de qualquer LLM (inclusive antes de criarLLM)
+    leuCorpus = true;
     const { llm, modelos } = criarLLM(config);
 
     canceladoFlag = false;
@@ -125,6 +166,7 @@ export async function rodarAprendizado(
     const falhas: ResultadoAprendizadoLote['falhas'] = [];
     for (const alvo of alvos) {
       if (canceladoFlag) break; // interrompe de fato: nenhum alvo novo começa após cancelar
+      const arquivos = arquivosComCap(alvo.arquivos);
       const opts = {
         llm,
         modelo: modelos.geracao,
@@ -139,11 +181,8 @@ export async function rodarAprendizado(
               // prefixo correto; sem isso o frontmatter `prefixos:` da máscara destilada saía
               // vazio e `montarAlvosReaprender`/o `laudo aprender` da CLI nunca achavam este
               // cluster de novo pelo acervo (C1).
-              await destilarMascara(
-                { id: alvo.maskId, arquivos: alvo.arquivos, masksDir: config.masksDir, prefixos: [alvo.maskId] },
-                opts,
-              )
-            : await aprenderRegras({ maskId: alvo.maskId, arquivos: alvo.arquivos, masksDir: config.masksDir }, opts);
+              await destilarMascara({ id: alvo.maskId, arquivos, masksDir: config.masksDir, prefixos: [alvo.maskId] }, opts)
+            : await aprenderRegras({ maskId: alvo.maskId, arquivos, masksDir: config.masksDir }, opts);
         ok.push({ chave: alvo.chave, arquivo: r.arquivo, custoUSD: r.custoUSD ?? 0 });
       } catch (err) {
         falhas.push({ chave: alvo.chave, erro: err instanceof Error ? err.message : String(err) });
@@ -152,7 +191,7 @@ export async function rodarAprendizado(
     return { ok, falhas };
   } finally {
     emExecucao = false;
-    limparTempDirsDoCorpus(tempDirsHistorico);
+    if (leuCorpus) limparTempDirsDoCorpus(tempDirsHistorico);
   }
 }
 
@@ -377,6 +416,16 @@ export interface ResumoReaprender {
   alvos: AlvoAprendizado[];
   /** Máscaras com `prefixos` configurados mas sem nenhum laudo disponível ainda (nem acervo, nem histórico editado). */
   semArquivos: { maskId: string; nome: string }[];
+  /**
+   * Ao menos um alvo inclui laudos do HISTÓRICO EDITADO (não só do acervo, cujo consentimento
+   * já foi dado no wizard de importação original) — sinaliza à janela do "Reaprender" (I3) que
+   * o passo de consentimento precisa aparecer antes de liberar "Aprender meu estilo": o
+   * histórico é um corpus novo, que o médico nunca viu nem autorizou explicitamente antes.
+   */
+  temHistorico: boolean;
+  /** Até 3 amostras sanitizadas (dos arquivos que os alvos vão enviar) para o passo de
+   *  consentimento do "Reaprender" — mesmo papel das amostras da importação normal. */
+  amostras: { arquivo: string; texto: string }[];
 }
 
 /**
@@ -421,6 +470,7 @@ export function montarAlvosReaprender(config: Config, capHistorico = 40): Resumo
   const CAP_POR_MASCARA = 60; // mesmo cap do `laudo aprender todos` da CLI (corpus.ts)
   const alvos: AlvoAprendizado[] = [];
   const semArquivos: ResumoReaprender['semArquivos'] = [];
+  let temHistorico = false;
   for (const m of masks) {
     const prefixosParaCasar = [...new Set([m.id, ...m.prefixos])];
     const doAcervo = existsSync(config.acervoDir)
@@ -431,11 +481,16 @@ export function montarAlvosReaprender(config: Config, capHistorico = 40): Resumo
       if (m.prefixos.length > 0) semArquivos.push({ maskId: m.id, nome: m.nome });
       continue;
     }
+    if (doHistorico.length > 0) temHistorico = true;
     // Cap final pelo MESMO `corpusPorArquivos` do resto do pipeline (`.slice(-cap)`):
     // com histórico no fim, a edição do médico só cede espaço ao acervo quando o
     // total ultrapassa o cap — peso de recência de fato, não só na ordem.
     const arquivos = corpusPorArquivos([...doAcervo, ...doHistorico], CAP_POR_MASCARA);
     alvos.push({ tipo: 'aprender', chave: m.id, maskId: m.id, arquivos });
   }
-  return { alvos, semArquivos };
+  const amostras = amostraAleatoria(
+    alvos.flatMap((a) => a.arquivos),
+    3,
+  ).map((arquivo) => ({ arquivo: basename(arquivo), texto: corpoDoArquivo(arquivo) }));
+  return { alvos, semArquivos, temHistorico, amostras };
 }

@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigSchema, type Config } from '../core/config/schema.js';
 import type { CompleteParams, LLMResult } from '../core/llm/types.js';
 import {
+  type AlvoAprendizado,
   cancelarAprendizado,
   corpusDoHistorico,
+  estimarAprendizado,
   limparCorpusHistoricoOrfao,
   listarEstilo,
   montarAlvosReaprender,
@@ -147,6 +149,23 @@ describe('montarAlvosReaprender', () => {
     expect(alvo.arquivos).toHaveLength(2);
     expect(alvo.arquivos[0]).toBe(join(acervoDir, 'torax-tc_2026-01-01_001.md'));
     expect(alvo.arquivos[1]).toContain('torax-tc'); // o temporário do histórico, no fim
+    // I3: com histórico no corpus, o wizard precisa saber (para exigir consentimento) e
+    // ter amostras sanitizadas prontas para mostrar antes de liberar "Aprender meu estilo".
+    expect(r.temHistorico).toBe(true);
+    expect(r.amostras.length).toBeGreaterThan(0);
+    expect(r.amostras.length).toBeLessThanOrEqual(3);
+    expect(r.amostras[0]!.texto.length).toBeGreaterThan(0);
+  });
+
+  it('I3: temHistorico é false quando só há acervo (nenhuma edição no histórico) — consentimento já dado na importação original', () => {
+    writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', ['torax-tc']), 'utf8');
+    writeFileSync(join(acervoDir, 'torax-tc_2026-01-01_001.md'), 'laudo do acervo', 'utf8');
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    const r = montarAlvosReaprender(c);
+
+    expect(r.alvos).toHaveLength(1);
+    expect(r.temHistorico).toBe(false);
   });
 
   it('cap de 60 por máscara: com o total além do cap, o histórico (no fim) sobrevive sobre o acervo mais antigo', () => {
@@ -230,6 +249,91 @@ describe('montarAlvosReaprender', () => {
 
     expect(r.alvos).toHaveLength(1);
     expect(r.alvos[0]!.arquivos).toHaveLength(1);
+  });
+});
+
+describe('estimarAprendizado — cap de 60 arquivos por alvo (I1)', () => {
+  let dir: string;
+  let acervoDir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'aerolince-estimar-cap-'));
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-estimar-cap-acervo-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(acervoDir, { recursive: true, force: true });
+  });
+
+  it('alvo com 200 arquivos: a estimativa considera só os 60 mais recentes — o mesmo cap da execução', () => {
+    const arquivos: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      const caminho = join(dir, `laudo-${String(i).padStart(3, '0')}.md`);
+      // Os primeiros 140 (descartados pelo cap) são bem maiores que os últimos 60 (mantidos) —
+      // se o cap NÃO for aplicado, o custo estimado dispara por causa desses arquivos grandes.
+      const texto = i < 140 ? 'x'.repeat(5000) : 'y'.repeat(10);
+      writeFileSync(caminho, texto, 'utf8');
+      arquivos.push(caminho);
+    }
+    const config = cfg({ masksDir: dir, outputDir: dir, bibliotecaBaseDir: dir, acervoDir });
+    const alvo: AlvoAprendizado = { tipo: 'aprender', chave: 'x', maskId: 'torax-tc', arquivos };
+
+    const r = estimarAprendizado([alvo], config);
+    // Referência: o mesmo cálculo aplicado só aos 60 mais recentes — o que a execução
+    // (`rodarAprendizado`/`arquivosComCap`) de fato envia ao LLM.
+    const esperado = estimarAprendizado([{ ...alvo, arquivos: arquivos.slice(-60) }], config);
+
+    expect(r.porAlvo[0]!.custoAproxUSD).not.toBeNull();
+    expect(r.porAlvo[0]!.custoAproxUSD).toBe(esperado.porAlvo[0]!.custoAproxUSD);
+  });
+});
+
+describe('rodarAprendizado — cap de 60 arquivos por alvo, mesmo ponto da estimativa (I1)', () => {
+  let masksDir: string;
+  let baseDir: string;
+  let acervoDir: string;
+  let outputDir: string;
+  let corpusDir: string;
+
+  beforeEach(() => {
+    masksDir = mkdtempSync(join(tmpdir(), 'aerolince-rodar-cap-medico-'));
+    baseDir = mkdtempSync(join(tmpdir(), 'aerolince-rodar-cap-base-'));
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-rodar-cap-acervo-'));
+    outputDir = mkdtempSync(join(tmpdir(), 'aerolince-rodar-cap-output-'));
+    corpusDir = mkdtempSync(join(tmpdir(), 'aerolince-rodar-cap-corpus-'));
+    vi.stubEnv('OPENAI_API_KEY', 'sk-fake');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-fake');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    for (const d of [masksDir, baseDir, acervoDir, outputDir, corpusDir]) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('um cluster com 80 arquivos manda só os 60 mais recentes ao LLM (o wizard não capava antes)', async () => {
+    const arquivos: string[] = [];
+    for (let i = 0; i < 80; i++) {
+      const caminho = join(corpusDir, `laudo-${String(i).padStart(3, '0')}.md`);
+      writeFileSync(caminho, i === 0 ? 'MARCADOR-MAIS-ANTIGO' : i === 79 ? 'MARCADOR-MAIS-RECENTE' : `conteúdo ${i}`, 'utf8');
+      arquivos.push(caminho);
+    }
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    let userRecebidoPeloLlm = '';
+    llmFake.handler = async (params) => {
+      userRecebidoPeloLlm = params.user;
+      return { text: 'regras extraídas', usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    };
+
+    const alvo: AlvoAprendizado = { tipo: 'aprender', chave: 'x', maskId: 'torax-tc', arquivos };
+    const r = await rodarAprendizado([alvo], c);
+
+    expect(r.falhas).toEqual([]);
+    const quantidadeDeLaudos = (userRecebidoPeloLlm.match(/─── LAUDO \d+ ───/g) ?? []).length;
+    expect(quantidadeDeLaudos).toBe(60);
+    expect(userRecebidoPeloLlm).toContain('MARCADOR-MAIS-RECENTE'); // o mais recente sobrevive ao cap
+    expect(userRecebidoPeloLlm).not.toContain('MARCADOR-MAIS-ANTIGO'); // o mais antigo é descartado pelo cap
   });
 });
 
@@ -336,7 +440,11 @@ describe('rodarAprendizado — higiene de privacidade: limpeza do corpus tempor�
     expect(existsSync(tempDir)).toBe(false);
   });
 
-  it('também limpa quando o GATE de chaves falha (nunca chega a chamar o LLM)', async () => {
+  // I2: inverte o comportamento anterior — o gate falhando ANTES do laço significa que o
+  // corpus nunca chegou a ser lido, então os tempdirs precisam SOBREVIVER (não virar ENOENT
+  // no retry). Quem cobre a limpeza deste caso é o sweep de `limparCorpusHistoricoOrfao`
+  // (boot / fechar a janela de importação), não o `finally` de `rodarAprendizado`.
+  it('I2: NÃO limpa quando o GATE de chaves falha (nunca chega a ler o corpus) — sobrevive para o retry', async () => {
     writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', ['torax-tc']), 'utf8');
     criarLaudo(outputDir, '2026-02-01_1000_torax-tc', { maskId: 'torax-tc', laudoFinalEditado: 'edição do médico' });
     const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
@@ -346,7 +454,29 @@ describe('rodarAprendizado — higiene de privacidade: limpeza do corpus tempor�
 
     await expect(rodarAprendizado(alvos, c)).rejects.toThrow(/ANTHROPIC_API_KEY/);
 
-    expect(existsSync(tempDir)).toBe(false);
+    expect(existsSync(tempDir)).toBe(true);
+  });
+
+  // I2 (regressão obrigatória): "gate falha → tempdirs sobrevivem → segundo rodar (com chave)
+  // encontra os arquivos" — reusa o MESMO `alvos` (plano já montado na tela) entre as duas
+  // tentativas, como o wizard faz de verdade (não remonta os alvos ao clicar de novo).
+  it('I2: retry após falha de gate acha os MESMOS arquivos do primeiro plano (sem ENOENT)', async () => {
+    writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', ['torax-tc']), 'utf8');
+    criarLaudo(outputDir, '2026-02-01_1000_torax-tc', { maskId: 'torax-tc', laudoFinalEditado: 'edição do médico' });
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+    const { alvos } = montarAlvosReaprender(c);
+    const tempDir = dirname(alvos[0]!.arquivos[0]!);
+
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    await expect(rodarAprendizado(alvos, c)).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    expect(existsSync(tempDir)).toBe(true); // sobreviveu à 1ª tentativa (gate falhou)
+
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-fake'); // médico configura a chave e clica de novo
+    const r = await rodarAprendizado(alvos, c); // MESMO array `alvos` — sem remontar o plano
+
+    expect(r.falhas).toEqual([]);
+    expect(r.ok).toHaveLength(1);
+    expect(existsSync(tempDir)).toBe(false); // limpo depois que o retry, agora, terminou de verdade
   });
 
   it('também limpa quando CANCELADO no meio do lote (2º alvo nunca chega a rodar)', async () => {
