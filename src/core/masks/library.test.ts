@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildCatalog, loadLibrary } from './library.js';
+import { buildCatalog, contarMascaras, loadLibrary } from './library.js';
 
 const EXEMPLO_DIR = resolve(import.meta.dirname, '../../../masks-exemplo');
 
@@ -71,5 +71,29 @@ describe('loadLibrary em camadas', () => {
     const base = dirTemp();
     escreverMascara(base, 'tc-cranio', 'A');
     expect(loadLibrary(base)).toHaveLength(1);
+  });
+});
+
+describe('contarMascaras', () => {
+  it('conta os .md com frontmatter id válido num diretório', () => {
+    const dir = dirTemp();
+    escreverMascara(dir, 'tc-cranio', 'A');
+    escreverMascara(dir, 'tc-torax', 'B');
+    expect(contarMascaras(dir)).toBe(2);
+  });
+
+  it('diretório vazio conta zero', () => {
+    expect(contarMascaras(dirTemp())).toBe(0);
+  });
+
+  it('diretório inexistente conta zero', () => {
+    expect(contarMascaras(join(dirTemp(), 'nao-existe'))).toBe(0);
+  });
+
+  it('.md sem frontmatter de máscara não conta', () => {
+    const dir = dirTemp();
+    escreverMascara(dir, 'tc-cranio', 'A');
+    writeFileSync(join(dir, 'anotacoes.md'), '# apenas anotações, sem frontmatter de máscara\n', 'utf8');
+    expect(contarMascaras(dir)).toBe(1);
   });
 });

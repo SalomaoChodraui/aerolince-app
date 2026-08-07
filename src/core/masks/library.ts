@@ -20,6 +20,15 @@ function loadCamada(dir: string): Map<string, Mask> {
   return camada;
 }
 
+/** Quantas máscaras (.md com frontmatter `id` válido) existem no diretório; 0 se ausente/vazio. */
+export function contarMascaras(dir: string): number {
+  return loadCamada(dir).size;
+}
+
+/** Aviso quando a biblioteca do médico não contribui nenhuma máscara (mesmo texto em toda a UI/CLI). */
+export const AVISO_BIBLIOTECA_VAZIA =
+  'sua biblioteca de máscaras não contribuiu nenhuma máscara — o laudo usa o fraseado genérico da biblioteca base (confira Configurações → Pastas e modelos)';
+
 /**
  * Carrega máscaras de uma ou mais camadas (precedência CRESCENTE: a última
  * vence por id — biblioteca do médico cobre a base). Camada ausente/vazia é

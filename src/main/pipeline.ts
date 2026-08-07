@@ -14,7 +14,7 @@ import { estimateCostUSD } from '../core/llm/anthropic.js';
 import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import type { LLMProvider } from '../core/llm/types.js';
 import type { LLMUsage } from '../core/llm/types.js';
-import { bibliotecasDe, getMask, loadLibrary } from '../core/masks/library.js';
+import { AVISO_BIBLIOTECA_VAZIA, bibliotecasDe, contarMascaras, getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
 import { validarAudio } from '../core/stt/audio-guard.js';
@@ -188,6 +188,7 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
   exigirChaves(config);
   const masks = loadLibrary(bibliotecasDe(config));
   const san = sanitizeComando(transcript);
+  const avisos = dedupAvisos(san.avisos, contarMascaras(config.masksDir) === 0 ? [AVISO_BIBLIOTECA_VAZIA] : []);
   const { llm, modelos } = criarLLM(config);
 
   const local = matchLocal(san.texto, masks);
@@ -205,7 +206,7 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
       if (candidatos.length >= 3) break;
       if (!candidatos.some((c) => c.id === m.id)) candidatos.push({ id: m.id, nome: m.nome });
     }
-    return { tipo: 'confirmar-mascara', transcript: san.texto, confianca: 'media', candidatos, avisos: san.avisos };
+    return { tipo: 'confirmar-mascara', transcript: san.texto, confianca: 'media', candidatos, avisos };
   }
   return gerarLaudo(
     llm,
@@ -214,7 +215,7 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
     { mask: sel.mask, confianca: sel.confianca, durationMs: sel.durationMs, usage: sel.usage },
     san.texto,
     sttMs,
-    san.avisos,
+    avisos,
   );
 }
 
@@ -248,7 +249,11 @@ export async function gerarComMascara(
   if (!mask) throw new Error(`máscara não encontrada: ${maskId}`);
   const san = sanitizeComando(transcript);
   const { llm, modelos } = criarLLM(config);
-  const avisos = dedupAvisos(avisosPrevios, san.avisos);
+  const avisos = dedupAvisos(
+    avisosPrevios,
+    san.avisos,
+    contarMascaras(config.masksDir) === 0 ? [AVISO_BIBLIOTECA_VAZIA] : [],
+  );
   return gerarLaudo(llm, config, modelos, { mask, confianca: 'manual', durationMs: 0, usage: null }, san.texto, 0, avisos);
 }
 
