@@ -128,7 +128,7 @@ export function generationProfileBlock(profileName: string, profileBody: string)
  */
 export function generationContext(maskBody: string, regras?: string): string {
   const regrasParte = regras
-    ? `\n\nREGRAS DO MÉDICO (extraídas dos laudos reais dele — precedência máxima de fraseado):\n<<<\n${regras}\n>>>`
+    ? `\n\nREGRAS E FRASEADO PREFERIDOS (do médico quando houver; da biblioteca base nos demais casos) — precedência máxima de fraseado:\n<<<\n${regras}\n>>>`
     : '';
   return `MÁSCARA:\n<<<\n${maskBody}\n>>>${regrasParte}`;
 }
