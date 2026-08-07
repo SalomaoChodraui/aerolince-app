@@ -68,6 +68,7 @@ let resultWin: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let historicoWin: BrowserWindow | null = null;
 let onboardingWin: BrowserWindow | null = null;
+let importarWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let appRoot = '';
@@ -190,6 +191,13 @@ function abrirOnboarding(): void {
     title: 'Bem-vindo ao Aerolince',
   });
 }
+function abrirImportar(): void {
+  abrirAux(importarWin, (w) => (importarWin = w), 'importar', {
+    width: 760,
+    height: 760,
+    title: 'Aerolince — Importar meus laudos',
+  });
+}
 
 // ── Tray ─────────────────────────────────────────────────────────────────────
 function trayIcon(): Electron.NativeImage {
@@ -226,6 +234,7 @@ function atualizarMenuTray(): void {
   itens.push(
     { type: 'separator' },
     { label: 'Histórico de laudos…', click: abrirHistorico },
+    { label: 'Importar meus laudos…', click: abrirImportar },
     { label: 'Configurações…', click: abrirSettings },
     { label: 'Guia rápido…', click: abrirOnboarding },
     { type: 'separator' },
@@ -249,11 +258,11 @@ function estado(fase: string, msg?: string): void {
   floatWin?.webContents.send('estado', { fase, msg });
 }
 
-// Progresso de acervo/aprendizado (Bloco 3): a janela que hospeda o wizard/"Meu
-// estilo" ainda não existe neste bloco (T6/T7) — manda a TODAS as janelas vivas,
-// mesmo padrão do canal 'estado' acima (o destino certo ganha o evento quando existir).
+// Progresso de acervo/aprendizado (Bloco 3): manda a TODAS as janelas vivas,
+// mesmo padrão do canal 'estado' acima (o wizard de importação é quem realmente
+// escuta hoje; as demais só ignoram o evento).
 function broadcast(canal: string, payload: unknown): void {
-  for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin]) {
+  for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin, importarWin]) {
     if (w && !w.isDestroyed()) w.webContents.send(canal, payload);
   }
 }
@@ -462,7 +471,7 @@ function registrarIpc(): void {
     floatWin?.setOpacity(c.ui.opacidadeBalao);
     registrarAtalho(c);
     atualizarMenuTray();
-    for (const w of [resultWin, settingsWin, historicoWin, onboardingWin]) w?.webContents.send('config-mudou', c);
+    for (const w of [resultWin, settingsWin, historicoWin, onboardingWin, importarWin]) w?.webContents.send('config-mudou', c);
     return c;
   });
   // Arraste manual do botão flutuante (clique = ditar, arraste = mover)
@@ -516,9 +525,10 @@ function registrarIpc(): void {
   ipcMain.handle('macro-rodar', (_e, comando: string) => processar(() => processarTexto(comando)));
 
   // Janelas e utilidades
-  ipcMain.handle('abrir', (_e, qual: 'settings' | 'historico' | 'onboarding') => {
+  ipcMain.handle('abrir', (_e, qual: 'settings' | 'historico' | 'onboarding' | 'importar') => {
     if (qual === 'settings') abrirSettings();
     else if (qual === 'historico') abrirHistorico();
+    else if (qual === 'importar') abrirImportar();
     else abrirOnboarding();
   });
   ipcMain.handle('escolher-pasta', async () => {

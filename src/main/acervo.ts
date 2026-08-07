@@ -30,6 +30,8 @@ export interface ClusterImportacao {
   quantidade: number;
   /** Id de máscara já existente na biblioteca (base+médico) que casa com este cluster; null se nenhuma. */
   maskIdExistente: string | null;
+  /** Caminhos ABSOLUTOS dos arquivos sanitizados deste cluster em `config.acervoDir` — é o que o wizard usa para montar `AlvoAprendizado.arquivos` (nunca os originais). */
+  arquivos: string[];
 }
 
 export interface ResumoImportacao {
@@ -144,21 +146,17 @@ export async function importarAcervo(
   const naoReconhecidos = classificados.filter((c) => c.classif.exame === null).length;
   const clustersBrutos = agruparClusters(classificados.map((c) => ({ arquivo: c.caminho, c: c.classif })));
   const idsExistentes = idsDeMascarasExistentes(config);
-  const clusters: ClusterImportacao[] = clustersBrutos.map((c) => ({
-    chave: c.chave,
-    exame: c.exame,
-    modalidade: c.modalidade,
-    contraste: c.contraste,
-    quantidade: c.arquivos.length,
-    maskIdExistente: idsExistentes.has(sugerirMaskId(c)) ? sugerirMaskId(c) : null,
-  }));
   const chavePorCaminho = new Map<string, string>();
   for (const c of clustersBrutos) for (const arquivo of c.arquivos) chavePorCaminho.set(arquivo, c.chave);
 
   // Fase 3 — sanitização + gravação em `config.acervoDir` (nome de arquivo sem paciente).
+  // `gravadosPorChave` reagrupa os arquivos GRAVADOS (acervoDir) por cluster — é o que o
+  // wizard (T6) precisa para montar `AlvoAprendizado.arquivos` (o corpus do aprendizado lê
+  // do acervo sanitizado, nunca dos originais em `paths`).
   const contadores = contadoresExistentes(config.acervoDir);
   let suspeitos = 0;
   const gravados: string[] = [];
+  const gravadosPorChave = new Map<string, string[]>();
   for (let i = 0; i < classificados.length; i++) {
     const { caminho, texto, classif } = classificados[i]!;
     onProgresso?.({ fase: 'sanitizando', atual: i + 1, total: classificados.length, arquivo: basename(caminho) });
@@ -174,7 +172,20 @@ export async function importarAcervo(
     });
     if (r.suspeito) suspeitos++;
     gravados.push(r.arquivo);
+    const lista = gravadosPorChave.get(chave) ?? [];
+    lista.push(r.arquivo);
+    gravadosPorChave.set(chave, lista);
   }
+
+  const clusters: ClusterImportacao[] = clustersBrutos.map((c) => ({
+    chave: c.chave,
+    exame: c.exame,
+    modalidade: c.modalidade,
+    contraste: c.contraste,
+    quantidade: c.arquivos.length,
+    maskIdExistente: idsExistentes.has(sugerirMaskId(c)) ? sugerirMaskId(c) : null,
+    arquivos: gravadosPorChave.get(c.chave) ?? [],
+  }));
 
   const amostras = amostraAleatoria(gravados, 3).map((arquivo) => ({
     arquivo: basename(arquivo),

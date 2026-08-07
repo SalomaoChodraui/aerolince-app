@@ -57,6 +57,7 @@ export default defineConfig({
           settings: resolve(import.meta.dirname, 'src/renderer/settings/index.html'),
           historico: resolve(import.meta.dirname, 'src/renderer/historico/index.html'),
           onboarding: resolve(import.meta.dirname, 'src/renderer/onboarding/index.html'),
+          importar: resolve(import.meta.dirname, 'src/renderer/importar/index.html'),
         },
       },
     },

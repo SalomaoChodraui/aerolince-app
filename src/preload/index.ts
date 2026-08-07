@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 type Resp = { ok: boolean; erro?: string };
 type StatusCofre = { cofreDisponivel: boolean; chaves: Record<string, 'ok' | 'invalida' | 'ausente'> };
@@ -11,6 +11,7 @@ type ClusterImportacao = {
   contraste: 'com' | 'sem';
   quantidade: number;
   maskIdExistente: string | null;
+  arquivos: string[];
 };
 type ResumoImportacao = {
   clusters: ClusterImportacao[];
@@ -77,6 +78,16 @@ const api = {
   // Acervo (Bloco 3): escolha de arquivos + importação 100% local (sem LLM)
   acervoEscolherArquivos: (): Promise<string[] | null> => ipcRenderer.invoke('acervo-escolher-arquivos'),
   acervoImportar: (paths: string[]): Promise<ResumoImportacao> => ipcRenderer.invoke('acervo-importar', paths),
+  // Arraste de arquivo (wizard de importação): Electron 43 removeu `File.path` — este é o
+  // substituto documentado. Síncrono (webUtils não expõe versão async); '' quando o item
+  // arrastado não corresponde a um arquivo real do disco (ex.: imagem colada).
+  caminhoDeArquivo: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
+  },
 
   // Aprendizado (Bloco 3): estimativa (sem LLM) e execução (com gate BYOK, sequencial, cancelável)
   aprendizadoEstimar: (
@@ -103,7 +114,7 @@ const api = {
     ipcRenderer.invoke('estilo-salvar', tipo, nome, texto),
 
   // Janelas e utilidades
-  abrir: (qual: 'settings' | 'historico' | 'onboarding'): Promise<void> => ipcRenderer.invoke('abrir', qual),
+  abrir: (qual: 'settings' | 'historico' | 'onboarding' | 'importar'): Promise<void> => ipcRenderer.invoke('abrir', qual),
   escolherPasta: (): Promise<string | null> => ipcRenderer.invoke('escolher-pasta'),
   abrirPasta: (caminho: string): Promise<string> => ipcRenderer.invoke('abrir-pasta', caminho),
   concluirOnboarding: (): Promise<void> => ipcRenderer.invoke('concluir-onboarding'),
