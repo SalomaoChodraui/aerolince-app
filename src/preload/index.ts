@@ -49,7 +49,11 @@ const api = {
     ipcRenderer.invoke('sessao-iniciar'),
   sessaoSegmento: (pcm: ArrayBuffer, durationMs: number): Promise<Resp> =>
     ipcRenderer.invoke('sessao-segmento', pcm, durationMs),
-  sessaoEncerrar: (): Promise<Resp> => ipcRenderer.invoke('sessao-encerrar'),
+  // `segmentosRecusados`: quantos trechos o VAD emitiu mas o main recusou nesta
+  // sessão — o médico precisa ver isso no laudo (aviso em `avisosDeCaptura`),
+  // não sumir em silêncio.
+  sessaoEncerrar: (segmentosRecusados: number): Promise<Resp> =>
+    ipcRenderer.invoke('sessao-encerrar', segmentosRecusados),
   sessaoCancelar: (): Promise<Resp> => ipcRenderer.invoke('sessao-cancelar'),
 
   desfazer: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('desfazer'),

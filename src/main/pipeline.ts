@@ -156,7 +156,7 @@ export async function transcreverConsolidado(
  */
 export async function processarAudioSegmentado(
   wavs: Buffer[],
-  tele: { capturedMs: number; speechMs: number },
+  tele: { capturedMs: number; speechMs: number; segmentosRecusados?: number },
 ): Promise<ResultadoPipeline> {
   const config = getConfig();
   exigirChaves(config);
@@ -173,14 +173,15 @@ export async function processarAudioSegmentado(
       segmentosStt: wavs.length,
       custoSttUSD: t.custoSttUSD,
     };
-    // Reavalia `avisosDeCaptura` agora COM a telemetria de áudio (regra b —
-    // só existe neste fluxo). A regra (a) recalculada aqui é idêntica à já
+    // Reavalia `avisosDeCaptura` agora COM a telemetria de áudio (regras b e c —
+    // só existem neste fluxo). A regra (a) recalculada aqui é idêntica à já
     // anexada em `gerarLaudo` (mesmo transcript/blocosAlterados) — `dedupAvisos`
-    // descarta a repetição, sobrando só o aviso novo de fala não captada.
+    // descarta a repetição, sobrando só os avisos novos.
     const avisosComAudio = avisosDeCaptura({
       palavrasDitadas: contarPalavras(res.transcript),
       blocosAlterados: res.blocosAlterados,
       audio: res.audio,
+      segmentosRecusados: tele.segmentosRecusados,
     });
     res.avisos = dedupAvisos(res.avisos, avisosComAudio);
   }

@@ -4,7 +4,7 @@
  * da fala do médico, a transcrição ficou curta e o laudo saiu = máscara normal,
  * sem NENHUM aviso. O médico quase assinou um laudo que não refletia o ditado.
  *
- * Duas regras independentes (podem coexistir):
+ * Três regras independentes (podem coexistir):
  *   (a) o médico ditou o bastante, mas nada no laudo mudou — sinal forte de que
  *       a captura falhou (ou o STT devolveu lixo) ANTES de chegar ao motor de
  *       geração. Não dispara para ditados curtos legítimos (ex.: "tomografia de
@@ -12,6 +12,9 @@
  *   (b) a telemetria de áudio (só existe no ditado segmentado) mostra que boa
  *       parte da fala captada pelo microfone nunca virou segmento de fala para
  *       o VAD — o médico falou mais do que o app ouviu.
+ *   (c) um ou mais trechos que o VAD emitiu foram recusados pelo main (limite de
+ *       tamanho, sessão já encerrada, etc.) — sem este aviso, o trecho some em
+ *       silêncio e o médico nunca fica sabendo que faltou pedaço do ditado.
  */
 
 /** Telemetria mínima que a regra (b) precisa — ver `TelemetriaAudio` em `src/main/pipeline.ts`. */
@@ -28,6 +31,8 @@ export interface EntradaAvisosCaptura {
   blocosAlterados: string[];
   /** Só presente no ditado segmentado — ausente no fluxo de texto/clássico. */
   audio?: TelemetriaParaAviso;
+  /** Trechos que o VAD emitiu no renderer mas o main recusou (ver regra c). */
+  segmentosRecusados?: number;
 }
 
 // Ditado de exame normal legítimo é curto ("tomografia de crânio normal" = 4
@@ -56,8 +61,19 @@ function avisoFalaNaoCaptada(audio: TelemetriaParaAviso): string {
   );
 }
 
+function avisoSegmentosRecusados(n: number): string {
+  return n === 1
+    ? '1 trecho do seu ditado não chegou à transcrição (recusado na captura) — confira o laudo com atenção.'
+    : `${n} trechos do seu ditado não chegaram à transcrição (recusados na captura) — confira o laudo com atenção.`;
+}
+
 /** Função pura — sem I/O, fácil de testar isoladamente do pipeline/Electron. */
-export function avisosDeCaptura({ palavrasDitadas, blocosAlterados, audio }: EntradaAvisosCaptura): string[] {
+export function avisosDeCaptura({
+  palavrasDitadas,
+  blocosAlterados,
+  audio,
+  segmentosRecusados,
+}: EntradaAvisosCaptura): string[] {
   const avisos: string[] = [];
   if (blocosAlterados.length === 0 && palavrasDitadas >= PALAVRAS_MINIMAS_PARA_AVISO_SEM_ALTERACAO) {
     avisos.push(avisoSemAlteracao(palavrasDitadas));
@@ -68,6 +84,9 @@ export function avisosDeCaptura({ palavrasDitadas, blocosAlterados, audio }: Ent
     audio.speechRatio < SPEECH_RATIO_MINIMO
   ) {
     avisos.push(avisoFalaNaoCaptada(audio));
+  }
+  if (segmentosRecusados && segmentosRecusados > 0) {
+    avisos.push(avisoSegmentosRecusados(segmentosRecusados));
   }
   return avisos;
 }
