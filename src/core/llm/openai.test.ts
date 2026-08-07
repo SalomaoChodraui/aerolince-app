@@ -32,6 +32,7 @@ describe('OpenAIProvider', () => {
         { role: 'system', content: 'A\n\nB' },
         { role: 'user', content: 'comando' },
       ],
+      reasoning_effort: 'minimal',
     });
     expect(r.text).toBe('laudo aqui');
     // prompt_tokens da OpenAI INCLUI os cacheados — inputTokens é o restante

@@ -33,6 +33,10 @@ export class OpenAIProvider implements LLMProvider {
         { role: 'system', content: system },
         { role: 'user', content: params.user },
       ],
+      // Família gpt-5 em chat.completions gasta tokens de raciocínio DENTRO de
+      // max_completion_tokens — sem isso, maxTokens baixo (ex.: seleção com 200)
+      // pode voltar vazio por consumir tudo em "pensar".
+      reasoning_effort: 'minimal',
     });
     const texto = r.choices[0]?.message?.content ?? '';
     const u = r.usage;
