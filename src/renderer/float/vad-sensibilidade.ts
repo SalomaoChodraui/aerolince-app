@@ -22,11 +22,18 @@ export interface ParametrosVad {
 // baixa/microfone distante, mas pode capturar ruído de fundo; quanto MAIS
 // alto, mais fala fraca é descartada — bom para ambiente ruidoso, mas corre
 // risco de perder parte do ditado (o defeito de campo que originou este fix).
+//
+// CORREÇÃO (2026-08): a versão anterior tinha 'media' em 0,5/0,35 por assumir
+// que era o default da lib — mas o default REAL do @ricky0123/vad-web 0.0.29
+// é positiveSpeechThreshold 0.3 / negativeSpeechThreshold 0.25 (conferido em
+// node_modules/@ricky0123/vad-web/dist). Com os valores antigos, o padrão
+// ficava MAIS RÍGIDO que o comportamento histórico do app — o oposto do
+// pretendido — e é candidato à causa do smoke test que perdeu ~81% da fala.
 export const PARAMETROS_POR_SENSIBILIDADE: Record<SensibilidadeVad, ParametrosVad> = {
   // Voz baixa / microfone distante — capta mais (pode pegar ruído).
-  alta: { positiveSpeechThreshold: 0.3, negativeSpeechThreshold: 0.2, minSpeechMs: 200, preSpeechPadMs: 1000 },
-  // Padrão.
-  media: { positiveSpeechThreshold: 0.5, negativeSpeechThreshold: 0.35, minSpeechMs: 400, preSpeechPadMs: 800 },
+  alta: { positiveSpeechThreshold: 0.2, negativeSpeechThreshold: 0.15, minSpeechMs: 150, preSpeechPadMs: 1000 },
+  // Padrão = comportamento histórico do app (default real da lib).
+  media: { positiveSpeechThreshold: 0.3, negativeSpeechThreshold: 0.25, minSpeechMs: 400, preSpeechPadMs: 800 },
   // Ambiente ruidoso — capta menos (exige fala mais clara para virar segmento).
-  baixa: { positiveSpeechThreshold: 0.65, negativeSpeechThreshold: 0.5, minSpeechMs: 500, preSpeechPadMs: 600 },
+  baixa: { positiveSpeechThreshold: 0.5, negativeSpeechThreshold: 0.35, minSpeechMs: 500, preSpeechPadMs: 600 },
 };

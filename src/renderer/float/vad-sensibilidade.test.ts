@@ -8,17 +8,19 @@ import { PARAMETROS_POR_SENSIBILIDADE } from './vad-sensibilidade.js';
 describe('PARAMETROS_POR_SENSIBILIDADE', () => {
   it('alta: voz baixa/microfone distante — thresholds mais baixos, capta mais', () => {
     expect(PARAMETROS_POR_SENSIBILIDADE.alta).toEqual({
-      positiveSpeechThreshold: 0.3,
-      negativeSpeechThreshold: 0.2,
-      minSpeechMs: 200,
+      positiveSpeechThreshold: 0.2,
+      negativeSpeechThreshold: 0.15,
+      minSpeechMs: 150,
       preSpeechPadMs: 1000,
     });
   });
 
-  it('media: padrão', () => {
+  // Deve bater com o default REAL da lib (0.0.29): positiveSpeechThreshold 0.3 /
+  // negativeSpeechThreshold 0.25 — não com um valor assumido (ver comentário na tabela).
+  it('media: padrão = default real do @ricky0123/vad-web 0.0.29', () => {
     expect(PARAMETROS_POR_SENSIBILIDADE.media).toEqual({
-      positiveSpeechThreshold: 0.5,
-      negativeSpeechThreshold: 0.35,
+      positiveSpeechThreshold: 0.3,
+      negativeSpeechThreshold: 0.25,
       minSpeechMs: 400,
       preSpeechPadMs: 800,
     });
@@ -26,8 +28,8 @@ describe('PARAMETROS_POR_SENSIBILIDADE', () => {
 
   it('baixa: ambiente ruidoso — thresholds mais altos, capta menos', () => {
     expect(PARAMETROS_POR_SENSIBILIDADE.baixa).toEqual({
-      positiveSpeechThreshold: 0.65,
-      negativeSpeechThreshold: 0.5,
+      positiveSpeechThreshold: 0.5,
+      negativeSpeechThreshold: 0.35,
       minSpeechMs: 500,
       preSpeechPadMs: 600,
     });
