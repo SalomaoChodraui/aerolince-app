@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import matter from 'gray-matter';
 import { describe, expect, it } from 'vitest';
 import { agruparClusters, classificarDocumento, sugerirMaskId } from './classificar.js';
 
@@ -206,6 +209,53 @@ describe('classificarDocumento', () => {
     const texto = 'TOMOGRAFIA COMPUTADORIZADA DAS SACROILÍACAS';
     expect(classificarDocumento(texto).exame).toBe('sacro-iliacas');
   });
+
+  // Regressão do bug de colisão (review): "tornozelo" aparece ANTES de "pe" na frase,
+  // mas o id real da combinação é tc-pe (sinônimo oficial em tc-pe.md: "TC do tornozelo
+  // e pé"), NÃO tc-tornozelo. Um match posicional (primeira palavra que casa) erraria aqui.
+  it('"TORNOZELO E PÉ" → exame "pe" (id real tc-pe), NÃO "tornozelo" — a combinação vence sobre a palavra isolada que aparece primeiro', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DO TORNOZELO E PÉ';
+    expect(classificarDocumento(texto).exame).toBe('pe');
+  });
+
+  it('"PÉ E TORNOZELO" (ordem invertida) também → "pe" — o teste da combinação é independente de ordem', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DO PÉ E TORNOZELO';
+    expect(classificarDocumento(texto).exame).toBe('pe');
+  });
+
+  it('"TORNOZELO" isolado (sem "pé") continua mapeando para "tornozelo" — sem regressão', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DO TORNOZELO';
+    expect(classificarDocumento(texto).exame).toBe('tornozelo');
+  });
+
+  it('"PÉ" isolado (sem "tornozelo") continua mapeando para "pe" — sem regressão', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DO PÉ';
+    expect(classificarDocumento(texto).exame).toBe('pe');
+  });
+
+  it('"SEIOS PARANASAIS" (sinônimo novo) → "seios-da-face" (id real tc-seios-da-face)', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DOS SEIOS PARANASAIS';
+    expect(classificarDocumento(texto).exame).toBe('seios-da-face');
+  });
+
+  // Caso do review: estudo MULTIFÁSICO cita uma fase SEM contraste e, na MESMA Técnica,
+  // outra fase COM contraste (após a injeção). Um short-circuit global no "sem" isolado
+  // classificaria isso errado como 'sem'; a neutralização seletiva resolve.
+  it('multifásico ("sem contraste" seguido de fases arterial/portal após a injeção) → com contraste', () => {
+    const texto =
+      'TOMOGRAFIA COMPUTADORIZADA DE ABDOME TOTAL\n\nRealizados cortes axiais sem contraste, seguidos de cortes nas fases arterial e portal, após a injeção intravenosa do meio de contraste iodado.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
+
+  it('não regride: "sem a injeção endovenosa do meio de contraste iodado" continua "sem" com a neutralização', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE CRÂNIO\n\nRealizado sem a injeção endovenosa do meio de contraste iodado.';
+    expect(classificarDocumento(texto).contraste).toBe('sem');
+  });
+
+  it('gatilho de fase isolado: "fase arterial" sozinho (sem citar "contraste" na mesma frase) → com contraste', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE ABDOME TOTAL\n\nAdquiridos cortes na fase arterial.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
 });
 
 describe('agruparClusters', () => {
@@ -275,5 +325,43 @@ describe('sugerirMaskId', () => {
     const cluster = agruparClusters([{ arquivo: 'x.md', c: classificarDocumento('TOMOGRAFIA COMPUTADORIZADA DE CRÂNIO') }])[0];
     expect(cluster).toBeDefined();
     if (cluster) expect(sugerirMaskId(cluster)).toBe('tc-cranio');
+  });
+});
+
+// Blindagem exigida pelo review: a verificação anterior contra os 18 ids reais usava
+// TÍTULOS SINTÉTICOS digitados à mão (não os arquivos de verdade), o que deixou passar
+// dois bugs reais (colisão tornozelo/pé em tc-pe.md; fraseado "uso intravenoso" em
+// tc-cranio.md). Este bloco lê os arquivos `tc-*.md` DE VERDADE, em disco, e não tem
+// nenhuma lista de títulos hardcoded — se algum arquivo real da base divergir do que o
+// classificador produz, este teste falha apontando o arquivo exato.
+describe('regressão real contra biblioteca-base/tc-*.md (sem títulos sintéticos)', () => {
+  const BIBLIOTECA_BASE = resolve(import.meta.dirname, '..', '..', '..', 'biblioteca-base');
+  const arquivos = readdirSync(BIBLIOTECA_BASE).filter((f) => /^tc-.*\.md$/.test(f));
+
+  it('encontrou os 18 arquivos tc-*.md em disco (sanity check do próprio teste — se isto falhar, o teste abaixo está vazio e passando por engano)', () => {
+    expect(arquivos.length).toBe(18);
+  });
+
+  it.each(arquivos)('%s: sugerirMaskId(classificarDocumento(título+Técnica real do arquivo)) === id do frontmatter', (arquivo) => {
+    const bruto = readFileSync(resolve(BIBLIOTECA_BASE, arquivo), 'utf8');
+    const { data, content } = matter(bruto);
+    const frontmatter = data as Record<string, unknown>;
+    const idReal = typeof frontmatter.id === 'string' ? frontmatter.id : null;
+    expect(idReal, `${arquivo}: frontmatter sem "id" string válido`).not.toBeNull();
+
+    // Só título + Técnica (corta antes de "Análise:") — é o que o classificador usa
+    // (título para modalidade/exame, texto inteiro do trecho para contraste); o corpo de
+    // achados por órgão não faz parte do que um import real teria como "cabeçalho".
+    const tituloETecnica = content.split(/\n\s*an[aá]lise\s*:?\s*\n/i)[0] ?? content;
+
+    const classificacao = classificarDocumento(tituloETecnica);
+    const cluster = agruparClusters([{ arquivo, c: classificacao }])[0];
+    expect(cluster, `${arquivo}: agruparClusters não produziu cluster`).toBeDefined();
+    if (cluster) {
+      expect(
+        sugerirMaskId(cluster),
+        `${arquivo}: esperado id="${idReal}", classificação=${JSON.stringify(classificacao)}`,
+      ).toBe(idReal);
+    }
   });
 });

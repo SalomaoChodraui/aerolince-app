@@ -57,20 +57,42 @@ const CONECTOR = /\b(?:da|de|do|dos|das)\b\s*(.+)/;
 /** Sufixos de lateralidade — removidos do slug e sinalizados em `lateral`. */
 const LATERALIDADE = /\b(?:direit[oa]|esquerd[oa]|dir|esq|bilateral)\b/;
 
-/** Tabela de sinônimos mínima: fragmento do complemento → slug canônico do exame. */
+/**
+ * Tabela de sinônimos do exame: cada entrada é testada na FRASE INTEIRA (não na
+ * primeira palavra que aparece) e a tabela é percorrida NA ORDEM — mais
+ * específico primeiro. Isso é o que evita a classe de bug de colisão entre uma
+ * combinação de membros conhecida e um membro isolado que também aparece na
+ * mesma frase: "TORNOZELO E PÉ" contém a palavra "tornozelo", mas o id real da
+ * biblioteca para essa combinação é `tc-pe` (sinônimo oficial: "TC do tornozelo
+ * e pé") — DIFERENTE do id `tc-tornozelo` (só tornozelo). Um `exec()` que anda
+ * da esquerda para a direita erraria aqui, pois "tornozelo" aparece ANTES de
+ * "pe" na frase; testar a combinação primeiro, independente de posição, resolve.
+ */
+const SINONIMOS_EXAME: { teste: (fraseInteira: string) => boolean; slug: string }[] = [
+  // Combinações específicas de membros ANTES dos membros isolados abaixo.
+  { teste: (f) => /\bpe\b/.test(f) && /\btornozelo\b/.test(f), slug: 'pe' },
+  { teste: (f) => /\b(?:encefalo|cranio)\b/.test(f), slug: 'cranio' },
+  { teste: (f) => /\babdome\b/.test(f), slug: 'abdome-total' },
+  { teste: (f) => /\btorax\b/.test(f), slug: 'torax' },
+  { teste: (f) => /\bcoluna\s+lombar\b|\blombo-?sacra\b/.test(f), slug: 'coluna-lombar' },
+  { teste: (f) => /\bcoluna\s+cervical\b/.test(f), slug: 'coluna-cervical' },
+  { teste: (f) => /\bcoluna\s+toracica\b/.test(f), slug: 'coluna-toracica' },
+  { teste: (f) => /seios da face|seios paranasais|\bface\b/.test(f), slug: 'seios-da-face' },
+  { teste: (f) => /\bsacro-?iliacas?\b/.test(f), slug: 'sacro-iliacas' },
+  // Membros isolados (só chegam aqui se a combinação acima não bateu).
+  { teste: (f) => /\bjoelho\b/.test(f), slug: 'joelho' },
+  { teste: (f) => /\bombro\b/.test(f), slug: 'ombro' },
+  { teste: (f) => /\bpunho\b/.test(f), slug: 'punho' },
+  { teste: (f) => /\bcotovelo\b/.test(f), slug: 'cotovelo' },
+  { teste: (f) => /\btornozelo\b/.test(f), slug: 'tornozelo' },
+  { teste: (f) => /\bpe\b/.test(f), slug: 'pe' },
+  { teste: (f) => /\bmao\b/.test(f), slug: 'mao' },
+  { teste: (f) => /\bbacia\b/.test(f), slug: 'bacia' },
+  { teste: (f) => /\bquadril\b/.test(f), slug: 'quadril' },
+];
+
 function sinonimoExame(fraseSemLateralidade: string): string | null {
-  const f = fraseSemLateralidade;
-  if (/\b(?:encefalo|cranio)\b/.test(f)) return 'cranio';
-  if (/\babdome\b/.test(f)) return 'abdome-total';
-  if (/\btorax\b/.test(f)) return 'torax';
-  if (/\bcoluna\s+lombar\b|\blombo-?sacra\b/.test(f)) return 'coluna-lombar';
-  if (/\bcoluna\s+cervical\b/.test(f)) return 'coluna-cervical';
-  if (/\bcoluna\s+toracica\b/.test(f)) return 'coluna-toracica';
-  if (/seios da face|\bface\b/.test(f)) return 'seios-da-face';
-  if (/\bsacro-?iliacas?\b/.test(f)) return 'sacro-iliacas';
-  const membro = /\b(joelho|ombro|punho|cotovelo|tornozelo|pe|mao|bacia|quadril)\b/.exec(f);
-  if (membro) return membro[1] ?? null;
-  return null;
+  return SINONIMOS_EXAME.find((s) => s.teste(fraseSemLateralidade))?.slug ?? null;
 }
 
 /**
@@ -87,40 +109,56 @@ function removerLateralidade(frase: string): { semLateral: string; lateral: bool
 }
 
 /**
- * Gatilhos positivos de contraste — frases da convenção do serviço (PT-BR formal de laudo).
- * "injeção intravenosa/endovenosa" e "uso intravenoso/endovenoso" são os DOIS fraseados
- * REAIS de Técnica encontrados nas 18 máscaras da biblioteca-base: 17 delas usam "injeção
- * intravenosa" (ex.: tc-abdome-total-com-contraste.md: "após injeção intravenosa do meio
- * de contraste iodado") e tc-cranio.md, sozinha, usa "uso intravenoso" ("sem uso
- * intravenoso do meio de contraste iodado"). "Endovenoso" é sinônimo comum de
- * "intravenoso" em laudos reais — incluído por robustez, mesmo sem ocorrência literal na
- * base atual. Sem essas variantes, laudos reais COM contraste cairiam no default 'sem'.
+ * Gatilhos positivos de contraste — frases da convenção do serviço (PT-BR formal de laudo)
+ * MAIS marcadores de protocolo multifásico. "injeção intravenosa/endovenosa" e "uso
+ * intravenoso/endovenoso" são os DOIS fraseados REAIS de Técnica encontrados nas 18
+ * máscaras da biblioteca-base: 17 delas usam "injeção intravenosa" (ex.:
+ * tc-abdome-total-com-contraste.md: "após injeção intravenosa do meio de contraste
+ * iodado") e tc-cranio.md, sozinha, usa "uso intravenoso" ("sem uso intravenoso do meio
+ * de contraste iodado"). "Endovenoso" é sinônimo comum de "intravenoso" em laudos reais
+ * — incluído por robustez, mesmo sem ocorrência literal na base atual. "fase
+ * arterial/venosa/portal/tardia/excretora" é o vocabulário de protocolo que só existe em
+ * estudo contrastado (as fases são definidas pelo momento da circulação do contraste) —
+ * sinaliza contraste mesmo quando o laudo não repete "com contraste" na mesma frase (caso
+ * típico de estudo multifásico, onde a Técnica pode citar uma fase SEM contraste seguida
+ * de fases COM). Deliberadamente NÃO incluídos: "realce"/"contrastad(o/a)" — aparecem
+ * também no corpo de ACHADOS de estudos SEM contraste (ex.: "sem realce anômalo" é uma
+ * afirmação normal em exames sem contraste), e o passo de neutralização abaixo não cobre
+ * esse tipo de negação de achado (só neutraliza negação de PROTOCOLO/Técnica).
  */
 const CONTRASTE_POSITIVO =
-  /\bcom contraste\b|\badministracao intravenosa\b|\buso do meio de contraste\b|\binjecao (?:intravenosa|endovenosa)\b|\buso (?:intravenoso|endovenoso)\b/;
+  /\bcom contraste\b|\badministracao intravenosa\b|\buso do meio de contraste\b|\binjecao (?:intravenosa|endovenosa)\b|\buso (?:intravenoso|endovenoso)\b|\bfases?\s+(?:arterial|venos[ao]|portal|tardia|excretora)\b/;
 
 /**
- * Negação PRÓXIMA aos gatilhos — cuidado: "administração/injeção/uso intravenoso" sozinha
- * é a frase AFIRMATIVA; a negativa típica é "SEM a administração/injeção
- * intravenosa"/"sem uso intravenoso"/"sem contraste"/"não foi administrado". Sem checar
- * negação, um laudo SEM contraste que cita a frase dentro da negativa seria classificado
- * como COM contraste (ex.: tc-abdome-total.md: "sem injeção intravenosa do meio de
- * contraste"; tc-cranio.md: "sem uso intravenoso do meio de contraste").
+ * Padrões de NEGAÇÃO de protocolo — cuidado: "administração/injeção/uso intravenoso"
+ * sozinha é a frase AFIRMATIVA; a negativa típica é "SEM a administração/injeção
+ * intravenosa"/"sem uso intravenoso"/"sem contraste"/"não foi administrado" (ex.:
+ * tc-abdome-total.md: "sem injeção intravenosa do meio de contraste"; tc-cranio.md: "sem
+ * uso intravenoso do meio de contraste"). Usado para NEUTRALIZAR (remover) essas
+ * ocorrências do texto ANTES de testar os gatilhos positivos — ver `detectarContraste`.
  */
-const CONTRASTE_NEGACAO =
-  /\bsem\s+(?:a\s+)?administracao\b|\bsem\s+(?:a\s+)?injecao\b|\bsem\s+(?:o\s+)?uso\b|\bsem contraste\b|\bnao foi administrado\b/;
+const NEGACAO_CONTRASTE_SRC =
+  String.raw`\bsem\s+(?:a\s+|o\s+)?(?:administracao|injecao|uso)\s+(?:intravenos[ao]|endovenos[ao]|de contraste|do contraste|do meio de contraste)\b` +
+  `|\\bsem contraste\\b` +
+  `|\\bnao foi administrado\\b`;
 
 /**
- * Detecta uso de contraste no texto inteiro do documento (título + corpo).
- * Espelha a convenção de `citaContraste` (masks/matcher.ts), mas — diferente
- * dela — reconhece negação, pois o acervo tem laudos SEM contraste que citam a
- * frase "administração/injeção/uso intravenoso" dentro de uma negativa.
+ * Detecta uso de contraste no texto inteiro do documento (título + corpo), por
+ * NEUTRALIZAÇÃO em vez de short-circuit: (1) remove do texto TODAS as ocorrências dos
+ * padrões de negação de protocolo (`NEGACAO_CONTRASTE_SRC`); (2) testa os gatilhos
+ * positivos (`CONTRASTE_POSITIVO`) apenas no que sobrou. Isso corrige um bug real: um
+ * short-circuit global ("se o texto INTEIRO contém qualquer negação, é 'sem'") classificava
+ * errado um laudo multifásico que cita uma fase SEM contraste e, na MESMA Técnica, outra
+ * fase COM contraste — o "sem" isolado bloqueava o "com" genuíno mais adiante no texto.
+ * NÃO é uma análise de escopo de negação real (não entende "a menos que", parênteses,
+ * etc.) — é uma heurística determinística sobre o vocabulário de protocolo conhecido desta
+ * base; ver o comentário de `CONTRASTE_POSITIVO` sobre o que foi deliberadamente deixado
+ * de fora.
  */
 function detectarContraste(texto: string): 'com' | 'sem' {
   const t = normalizar(texto);
-  if (CONTRASTE_NEGACAO.test(t)) return 'sem';
-  if (CONTRASTE_POSITIVO.test(t)) return 'com';
-  return 'sem';
+  const semNegacoesDeProtocolo = t.replace(new RegExp(NEGACAO_CONTRASTE_SRC, 'g'), ' ');
+  return CONTRASTE_POSITIVO.test(semNegacoesDeProtocolo) ? 'com' : 'sem';
 }
 
 /** Acha a 1ª linha de título que bate com alguma modalidade e extrai o complemento (exame cru). */
