@@ -22,6 +22,23 @@ export function loadRegras(config: Config, maskId: string): string | undefined {
     if (escolhido) parts.push(readFileSync(escolhido, 'utf8').trim());
   }
 
+  // Pares de síntese da conclusão (`regras/sintese-<maskId>.md`): mesma resolução
+  // POR ARQUIVO em camadas (médico vence a base). Entra DEPOIS das regras e ANTES
+  // do frasário, com cabeçalho próprio — é a referência do nível de condensação
+  // que a regra 12 de GENERATION_RULES manda usar na Conclusão.
+  {
+    let escolhido: string | undefined;
+    for (const dir of camadas) {
+      const p = join(dir, 'regras', `sintese-${maskId}.md`);
+      if (existsSync(p)) escolhido = p;
+    }
+    if (escolhido) {
+      parts.push(
+        `PARES DE SÍNTESE DA CONCLUSÃO (como este médico condensa cada achado no fecho) — use como referência de nível de síntese:\n${readFileSync(escolhido, 'utf8').trim()}`,
+      );
+    }
+  }
+
   // Frasário: união das camadas; mesmo nome de arquivo → vence o do médico
   const arquivos = new Map<string, { caminho: string; origem: 'base' | 'medico' }>(); // nome → vencedor
   camadas.forEach((dir, i) => {

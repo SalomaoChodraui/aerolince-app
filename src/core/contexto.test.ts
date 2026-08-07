@@ -68,3 +68,46 @@ describe('loadRegras em camadas', () => {
     expect(loadRegras(config, 'tc-torax')!).toContain('SO TORAX');
   });
 });
+
+describe('loadRegras — pares de síntese da conclusão (regras/sintese-<maskId>.md)', () => {
+  it('sintese-<id>.md do médico vence o da base (mesma precedência por arquivo das regras)', () => {
+    const { base, medico, config } = setup();
+    writeFileSync(join(base, 'regras', 'sintese-tc-abdome.md'), '- corpo: X base\n  conclusão: Y base', 'utf8');
+    writeFileSync(join(medico, 'regras', 'sintese-tc-abdome.md'), '- corpo: X medico\n  conclusão: Y medico', 'utf8');
+    const r = loadRegras(config, 'tc-abdome')!;
+    expect(r).toContain('Y medico');
+    expect(r).not.toContain('Y base');
+  });
+
+  it('só na base → cai para a base; injeta com o cabeçalho próprio de PARES DE SÍNTESE', () => {
+    const { base, config } = setup();
+    writeFileSync(join(base, 'regras', 'sintese-tc-abdome.md'), '- corpo: X\n  conclusão: Y', 'utf8');
+    const r = loadRegras(config, 'tc-abdome')!;
+    expect(r).toContain('PARES DE SÍNTESE DA CONCLUSÃO');
+    expect(r).toContain('- corpo: X');
+  });
+
+  it('posição: depois das regras da máscara e antes do frasário', () => {
+    const { base, config } = setup();
+    writeFileSync(join(base, 'regras', 'tc-abdome.md'), 'REGRAS DA MASCARA', 'utf8');
+    writeFileSync(join(base, 'regras', 'sintese-tc-abdome.md'), 'PARES AQUI', 'utf8');
+    writeFileSync(join(base, 'frasario', 'a.md'), '---\naplica_a: []\n---\nFRASE A', 'utf8');
+    const r = loadRegras(config, 'tc-abdome')!;
+    expect(r.indexOf('REGRAS DA MASCARA')).toBeLessThan(r.indexOf('PARES AQUI'));
+    expect(r.indexOf('PARES AQUI')).toBeLessThan(r.indexOf('FRASE A'));
+  });
+
+  it('ausente nas duas camadas não quebra nem injeta o cabeçalho', () => {
+    const { base, config } = setup();
+    writeFileSync(join(base, 'regras', 'gerais.md'), 'GERAIS', 'utf8');
+    const r = loadRegras(config, 'tc-abdome')!;
+    expect(r).toContain('GERAIS');
+    expect(r).not.toContain('PARES DE SÍNTESE DA CONCLUSÃO');
+  });
+
+  it('sintese de OUTRA máscara não entra (arquivo é por exame)', () => {
+    const { base, config } = setup();
+    writeFileSync(join(base, 'regras', 'sintese-tc-torax.md'), 'PARES DO TORAX', 'utf8');
+    expect(loadRegras(config, 'tc-abdome') ?? '').not.toContain('PARES DO TORAX');
+  });
+});
