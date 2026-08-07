@@ -33,6 +33,7 @@ import {
   cancelarAprendizado,
   estimarAprendizado,
   lerEstilo,
+  limparCorpusHistoricoOrfao,
   listarEstilo,
   montarAlvosReaprender,
   rodarAprendizado,
@@ -373,6 +374,15 @@ function bootstrap(): string {
     if (n > 0) console.log(`[historico] retenção: ${n} laudo(s) além de ${c.historico.retencaoDias} dias apagados`);
   } catch (e) {
     console.log('[historico] limpeza de retenção falhou (ignorada):', e instanceof Error ? e.message : e);
+  }
+  // Corpus temporário do Reaprender (Bloco 3, T7): apaga órfãos de sessões que nunca
+  // chegaram a rodar o aprendizado (fechou a janela, crash) — melhor-esforço, síncrono
+  // e rápido (só um readdir de tmpdir()), nunca trava o boot.
+  try {
+    const n = limparCorpusHistoricoOrfao();
+    if (n > 0) console.log(`[aprendizado] corpus do histórico: ${n} diretório(s) temporário(s) órfão(s) apagados`);
+  } catch (e) {
+    console.log('[aprendizado] limpeza do corpus do histórico falhou (ignorada):', e instanceof Error ? e.message : e);
   }
   // Recovery de ditado interrompido: oferecer/expirar o spool órfão SEM travar o
   // boot (fire-and-forget). O diálogo só resolve após interação do usuário, quando

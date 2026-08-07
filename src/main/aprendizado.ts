@@ -10,9 +10,9 @@
  * Progresso via `onProgresso` — o chamador (main/index.ts) repassa a TODAS as
  * janelas vivas via `webContents.send` (mesmo padrão do canal `estado`).
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { sanitize } from '../core/anonymizer/anonymizer.js';
 import { writeFileAtomicSync } from '../core/atomic-write.js';
@@ -100,6 +100,13 @@ export interface ResultadoAprendizadoLote {
  * andamento só para no próximo checkpoint interno do core (`cancelado?.()`,
  * checado ali antes da chamada ao LLM) e sua falha entra em `falhas` como
  * qualquer outra. Falha de um alvo isolado nunca interrompe os demais.
+ *
+ * Higiene de privacidade: se algum `alvo.arquivos` vier de `corpusDoHistorico`
+ * (Reaprender — arquivos temporários fora de `outputDir`), esses diretórios
+ * são apagados no `finally`, DEPOIS que todo o lote terminou (sucesso, falha
+ * OU cancelamento — o corpus já foi lido por `montarCorpus` a essa altura, não
+ * precisa sobreviver). Cobre também a falha do gate `exigirChaves`: nada de
+ * lixo permanente em `tmpdir()` mesmo se o BYOK não estiver configurado.
  */
 export async function rodarAprendizado(
   alvos: AlvoAprendizado[],
@@ -107,14 +114,15 @@ export async function rodarAprendizado(
   onProgresso?: (p: { chave: string; etapa: string; atual: number; total: number }) => void,
 ): Promise<ResultadoAprendizadoLote> {
   if (emExecucao) throw new Error('já existe um aprendizado em andamento — aguarde terminar ou cancele antes de iniciar outro');
-  exigirChaves(config); // gate ANTES de qualquer LLM (inclusive antes de criarLLM)
-  const { llm, modelos } = criarLLM(config);
-
+  const tempDirsHistorico = tempDirsDoCorpusHistorico(alvos);
   emExecucao = true;
-  canceladoFlag = false;
-  const ok: ResultadoAprendizadoLote['ok'] = [];
-  const falhas: ResultadoAprendizadoLote['falhas'] = [];
   try {
+    exigirChaves(config); // gate ANTES de qualquer LLM (inclusive antes de criarLLM)
+    const { llm, modelos } = criarLLM(config);
+
+    canceladoFlag = false;
+    const ok: ResultadoAprendizadoLote['ok'] = [];
+    const falhas: ResultadoAprendizadoLote['falhas'] = [];
     for (const alvo of alvos) {
       if (canceladoFlag) break; // interrompe de fato: nenhum alvo novo começa após cancelar
       const opts = {
@@ -133,10 +141,11 @@ export async function rodarAprendizado(
         falhas.push({ chave: alvo.chave, erro: err instanceof Error ? err.message : String(err) });
       }
     }
+    return { ok, falhas };
   } finally {
     emExecucao = false;
+    limparTempDirsDoCorpus(tempDirsHistorico);
   }
-  return { ok, falhas };
 }
 
 // ── Meu estilo (leitura/gravação da biblioteca do médico) ───────────────────
@@ -238,6 +247,13 @@ export function salvarEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasa
 
 // ── Reaprender com meus laudos (T7): corpus do histórico editado ────────────
 
+// Prefixo dos diretórios temporários do corpus do histórico dentro de `tmpdir()` — usado tanto
+// para CRIAR (`corpusDoHistorico`) quanto para RECONHECER e limpar (`limparTempDirsDoCorpus`,
+// `limparCorpusHistoricoOrfao`). Esses diretórios não têm política de retenção própria como o
+// spool de áudio (cifrado, ≤48 h) — são só texto já sanitizado, mas mesmo assim não devem
+// acumular para sempre no temp do SO (higiene de privacidade).
+const PREFIXO_TMP_CORPUS_HISTORICO = 'aerolince-corpus-historico-';
+
 export interface ItemCorpusHistorico {
   /** Máscara à qual este laudo do histórico pertence (sidecar `maskId`) — usada para juntar ao alvo certo do "Reaprender". */
   maskId: string;
@@ -280,13 +296,73 @@ export function corpusDoHistorico(outputDir: string, cap = 40): ItemCorpusHistor
   }
   const recentes = editados.slice(-cap);
   if (recentes.length === 0) return [];
-  const dir = mkdtempSync(join(tmpdir(), 'aerolince-corpus-historico-'));
+  // NÃO fica órfão para sempre: quem consome estes arquivos (`rodarAprendizado`) apaga o
+  // diretório inteiro no `finally`, depois que o corpus já foi lido; `limparCorpusHistoricoOrfao`
+  // (chamada no boot) cobre o caso de a sessão nunca ter chegado a rodar o aprendizado.
+  const dir = mkdtempSync(join(tmpdir(), PREFIXO_TMP_CORPUS_HISTORICO));
   return recentes.map(({ maskId, texto }, i) => {
     const { clean } = sanitize(texto); // re-sanitização obrigatória, mesmo já vindo do pipeline sanitizado
     const destino = join(dir, `${maskId}_${String(i).padStart(3, '0')}.md`);
     writeFileSync(destino, clean, 'utf8');
     return { maskId, arquivo: destino };
   });
+}
+
+/**
+ * Diretórios temporários do corpus do histórico (prefixo `PREFIXO_TMP_CORPUS_HISTORICO` dentro
+ * de `tmpdir()`) referenciados pelos arquivos de um lote de alvos — identificados pelo próprio
+ * caminho, sem precisar de um registro à parte: todo arquivo de `corpusDoHistorico` mora
+ * DIRETAMENTE dentro de um diretório assim, então basta olhar o pai de cada `arquivo`.
+ */
+function tempDirsDoCorpusHistorico(alvos: AlvoAprendizado[]): Set<string> {
+  const raiz = tmpdir();
+  const dirs = new Set<string>();
+  for (const alvo of alvos) {
+    for (const arquivo of alvo.arquivos) {
+      const pai = dirname(arquivo);
+      if (dirname(pai) === raiz && basename(pai).startsWith(PREFIXO_TMP_CORPUS_HISTORICO)) dirs.add(pai);
+    }
+  }
+  return dirs;
+}
+
+/** Apaga os diretórios temporários do corpus do histórico depois de consumidos. Best-effort — uma falha aqui nunca deve mascarar o resultado do aprendizado. */
+function limparTempDirsDoCorpus(dirs: Iterable<string>): void {
+  for (const dir of dirs) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best-effort — o SO eventualmente limpa tmpdir(); não é motivo para lançar */
+    }
+  }
+}
+
+/**
+ * Varre `tmpdir()` por diretórios órfãos do corpus do histórico (`aerolince-corpus-historico-*`)
+ * de sessões anteriores que nunca chegaram a rodar `rodarAprendizado` (fechou a janela do
+ * Reaprender só depois de ver o custo, crash do app, etc.) — mesma ideia do recovery do spool de
+ * áudio, chamada uma vez no boot. Best-effort: nunca deve travar o boot. Devolve quantos
+ * diretórios foram removidos (só para log/teste).
+ */
+export function limparCorpusHistoricoOrfao(): number {
+  const raiz = tmpdir();
+  let nomes: string[];
+  try {
+    nomes = readdirSync(raiz);
+  } catch {
+    return 0; // tmpdir() inacessível — nunca travar o boot por causa disso
+  }
+  let removidos = 0;
+  for (const nome of nomes) {
+    if (!nome.startsWith(PREFIXO_TMP_CORPUS_HISTORICO)) continue;
+    try {
+      rmSync(join(raiz, nome), { recursive: true, force: true });
+      removidos++;
+    } catch {
+      /* best-effort — segue para o próximo */
+    }
+  }
+  return removidos;
 }
 
 export interface ResumoReaprender {
