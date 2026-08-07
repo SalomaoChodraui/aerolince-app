@@ -53,6 +53,11 @@ function App() {
     setCfg(c);
     flashSalvo();
   }
+  async function patchLlm(patch: Partial<RendererConfig['llm']>) {
+    const c = (await api.configSet({ llm: patch })) as RendererConfig;
+    setCfg(c);
+    flashSalvo();
+  }
   function flashSalvo() {
     setSalvo(true);
     setTimeout(() => setSalvo(false), 1200);
@@ -137,6 +142,35 @@ function App() {
               onBlur={(e) => patchUI({ atalho: e.target.value })}
               style={{ width: 200 }}
             />
+          </div>
+        </div>
+
+        <div className="secao">
+          <h2>Motor de geração</h2>
+          <div className="linha">
+            <div>
+              <div className="rot">Quem escreve os laudos</div>
+              <div className="desc">
+                {cfg.llm.provider === 'anthropic'
+                  ? 'Claude gera os laudos; OpenAI transcreve a voz. Precisa das duas chaves.'
+                  : 'A OpenAI transcreve a voz E gera os laudos. Precisa só da chave OpenAI.'}
+              </div>
+            </div>
+            <select
+              className="ctrl"
+              value={cfg.llm.provider}
+              onChange={(e) => {
+                const p = e.target.value as RendererConfig['llm']['provider'];
+                void patchLlm(
+                  p === 'openai'
+                    ? { provider: p, selectionModel: 'gpt-5-mini', generationModel: 'gpt-5-mini', fastModel: 'gpt-5-mini' }
+                    : { provider: p, selectionModel: 'claude-haiku-4-5', generationModel: 'claude-haiku-4-5', fastModel: 'claude-haiku-4-5' },
+                );
+              }}
+            >
+              <option value="anthropic">OpenAI + Anthropic (recomendado)</option>
+              <option value="openai">Só OpenAI</option>
+            </select>
           </div>
         </div>
 
