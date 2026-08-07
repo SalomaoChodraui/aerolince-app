@@ -1,29 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { CompleteParams, LLMProvider, LLMResult, LLMUsage, SystemBlock } from './types.js';
 
-export interface LLMUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
-
-export interface LLMResult {
-  text: string;
-  usage: LLMUsage;
-}
-
-export interface SystemBlock {
-  text: string;
-  /** Marca este bloco como fronteira de prompt caching (conteúdo estável). */
-  cache?: boolean;
-}
-
-export interface CompleteParams {
-  model: string;
-  system: SystemBlock[];
-  user: string;
-  maxTokens: number;
-}
+export type { CompleteParams, LLMProvider, LLMResult, LLMUsage, SystemBlock } from './types.js';
 
 /**
  * Wrapper fino do Claude: aplica cache_control nos blocos estáveis e desliga o
@@ -37,7 +15,7 @@ export interface LLMClientOptions {
   supportsCache?: boolean;
 }
 
-export class LLMClient {
+export class LLMClient implements LLMProvider {
   private client: Anthropic;
   private supportsCache: boolean;
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { LLMClient, LLMUsage, SystemBlock } from '../llm/anthropic.js';
+import { LLMUsage, SystemBlock } from '../llm/anthropic.js';
+import type { LLMProvider } from '../llm/types.js';
 import { Mask } from '../masks/schema.js';
 import { buildCatalog, getMask } from '../masks/library.js';
 import { resolverContraste } from '../masks/matcher.js';
@@ -64,7 +65,7 @@ function parseJson(text: string): unknown {
 }
 
 export async function selectMask(
-  llm: LLMClient,
+  llm: LLMProvider,
   model: string,
   transcript: string,
   masks: Mask[],
@@ -101,7 +102,7 @@ interface PatchRun {
  * Uma nova tentativa em caso de formato inválido; depois, erro.
  */
 async function runPatches(
-  llm: LLMClient,
+  llm: LLMProvider,
   model: string,
   system: SystemBlock[],
   user: string,
@@ -156,7 +157,7 @@ export interface GenerateParams {
   regras?: string;
 }
 
-export async function generate(llm: LLMClient, p: GenerateParams): Promise<GenerationResult> {
+export async function generate(llm: LLMProvider, p: GenerateParams): Promise<GenerationResult> {
   const t0 = performance.now();
   const system: SystemBlock[] = [
     { text: GENERATION_RULES, cache: true },
@@ -177,7 +178,7 @@ export interface RefineParams {
   regras?: string;
 }
 
-export async function refine(llm: LLMClient, p: RefineParams): Promise<GenerationResult> {
+export async function refine(llm: LLMProvider, p: RefineParams): Promise<GenerationResult> {
   const t0 = performance.now();
   const system: SystemBlock[] = [
     { text: GENERATION_RULES, cache: true },
