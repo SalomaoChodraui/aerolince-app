@@ -61,6 +61,36 @@ describe('classificarDocumento', () => {
     expect(classificarDocumento(texto).contraste).toBe('sem');
   });
 
+  // Fraseado real da Técnica na biblioteca-base usa "injeção intravenosa/endovenosa"
+  // (não "administração") — sem estas variantes, laudos reais COM contraste cairiam
+  // no default 'sem'. Ver biblioteca-base/tc-abdome-total-com-contraste.md e tc-abdome-total.md.
+  it('"com a injeção endovenosa do meio de contraste iodado" → com contraste', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE CRÂNIO\n\nRealizado com a injeção endovenosa do meio de contraste iodado.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
+
+  it('"sem a injeção endovenosa do meio de contraste iodado" → sem contraste (negação, mesmo contendo a sub-frase afirmativa)', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE CRÂNIO\n\nRealizado sem a injeção endovenosa do meio de contraste iodado.';
+    expect(classificarDocumento(texto).contraste).toBe('sem');
+  });
+
+  it('"após injeção intravenosa de contraste" → com contraste', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE ABDOME TOTAL\n\nRealizado após injeção intravenosa de contraste.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
+
+  it('fraseado real de tc-abdome-total-com-contraste.md ("após injeção intravenosa do meio de contraste iodado") → com', () => {
+    const texto =
+      'TOMOGRAFIA COMPUTADORIZADA DE ABDOME E PELVE\n\nRealizado estudo helicoidal do abdome e da pelve após injeção intravenosa do meio de contraste iodado, com reconstruções multiplanares.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
+
+  it('fraseado real de tc-abdome-total.md ("sem injeção intravenosa do meio de contraste iodado") → sem', () => {
+    const texto =
+      'TOMOGRAFIA COMPUTADORIZADA DE ABDOME E PELVE\n\nRealizado estudo helicoidal do abdome e da pelve, sem injeção intravenosa do meio de contraste iodado, com reconstruções multiplanares.';
+    expect(classificarDocumento(texto).contraste).toBe('sem');
+  });
+
   it('rm de coluna lombar', () => {
     const texto = 'RESSONÂNCIA MAGNÉTICA DA COLUNA LOMBAR\n\nAlinhamento preservado.';
     expect(classificarDocumento(texto)).toEqual({

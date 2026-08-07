@@ -86,22 +86,31 @@ function removerLateralidade(frase: string): { semLateral: string; lateral: bool
   return { semLateral, lateral };
 }
 
-/** Gatilhos positivos de contraste — frases da convenção do serviço (PT-BR formal de laudo). */
-const CONTRASTE_POSITIVO = /\bcom contraste\b|\badministracao intravenosa\b|\buso do meio de contraste\b/;
+/**
+ * Gatilhos positivos de contraste — frases da convenção do serviço (PT-BR formal de laudo).
+ * "injeção intravenosa/endovenosa" é o fraseado REAL da Técnica na biblioteca-base
+ * (ex.: tc-abdome-total-com-contraste.md: "após injeção intravenosa do meio de
+ * contraste iodado") — sem essas variantes, laudos reais COM contraste cairiam no
+ * default 'sem'.
+ */
+const CONTRASTE_POSITIVO =
+  /\bcom contraste\b|\badministracao intravenosa\b|\buso do meio de contraste\b|\binjecao (?:intravenosa|endovenosa)\b/;
 
 /**
- * Negação PRÓXIMA aos gatilhos — cuidado: "administração intravenosa" sozinha é a
- * frase AFIRMATIVA; a negativa típica é "SEM a administração intravenosa"/"sem
- * contraste"/"não foi administrado". Sem checar negação, um laudo SEM contraste
- * que cita a frase dentro da negativa seria classificado como COM contraste.
+ * Negação PRÓXIMA aos gatilhos — cuidado: "administração/injeção intravenosa" sozinha
+ * é a frase AFIRMATIVA; a negativa típica é "SEM a administração/injeção
+ * intravenosa"/"sem contraste"/"não foi administrado". Sem checar negação, um laudo
+ * SEM contraste que cita a frase dentro da negativa seria classificado como COM
+ * contraste (ex.: tc-abdome-total.md: "sem injeção intravenosa do meio de contraste").
  */
-const CONTRASTE_NEGACAO = /\bsem\s+(?:a\s+)?administracao\b|\bsem contraste\b|\bnao foi administrado\b/;
+const CONTRASTE_NEGACAO =
+  /\bsem\s+(?:a\s+)?administracao\b|\bsem\s+(?:a\s+)?injecao\b|\bsem contraste\b|\bnao foi administrado\b/;
 
 /**
  * Detecta uso de contraste no texto inteiro do documento (título + corpo).
  * Espelha a convenção de `citaContraste` (masks/matcher.ts), mas — diferente
  * dela — reconhece negação, pois o acervo tem laudos SEM contraste que citam a
- * frase "administração intravenosa" dentro de uma negativa.
+ * frase "administração/injeção intravenosa" dentro de uma negativa.
  */
 function detectarContraste(texto: string): 'com' | 'sem' {
   const t = normalizar(texto);
