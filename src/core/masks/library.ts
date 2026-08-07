@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
+import type { Config } from '../config/schema.js';
 import { Mask, MaskFrontmatterSchema } from './schema.js';
 
 /** Carrega uma camada; devolve mapa id → Mask. Duplicata na MESMA camada = erro. */
@@ -44,4 +45,9 @@ export function buildCatalog(masks: Mask[]): string {
 
 export function getMask(masks: Mask[], id: string): Mask | undefined {
   return masks.find((m) => m.id === id);
+}
+
+/** Camadas de biblioteca em precedência crescente: base do app → biblioteca do médico. */
+export function bibliotecasDe(config: Config): string[] {
+  return [config.bibliotecaBaseDir, config.masksDir];
 }

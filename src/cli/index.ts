@@ -21,7 +21,7 @@ import { generate, selectMask } from '../core/engine/engine.js';
 import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
-import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
+import { bibliotecasDe, buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
 import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
@@ -42,8 +42,9 @@ function parseArgs(argv: string[]) {
 }
 
 function loadMasks(config: ReturnType<typeof loadConfig>) {
-  if (existsSync(config.masksDir)) return loadLibrary(config.masksDir);
-  console.warn(`AVISO: biblioteca não encontrada em ${config.masksDir} — usando masks-exemplo/`);
+  const camadas = bibliotecasDe(config);
+  if (camadas.some((dir) => existsSync(dir))) return loadLibrary(camadas);
+  console.warn(`AVISO: nenhuma biblioteca encontrada (${camadas.join(', ')}) — usando masks-exemplo/`);
   return loadLibrary(resolve(APP_ROOT, 'masks-exemplo'));
 }
 
@@ -481,7 +482,11 @@ async function main() {
     await runEval();
   } else if (cmd === 'masks') {
     const masks = loadMasks(loadConfig(APP_ROOT));
-    console.log(masks.map((m) => `${m.id} — ${m.nome} (v${m.versao}, ${m.origem})`).join('\n'));
+    console.log(
+      masks
+        .map((m) => `${m.id} — ${m.nome} (v${m.versao}, ${m.origem})${m.origem === 'base' ? ' (base)' : ''}`)
+        .join('\n'),
+    );
   } else if (cmd && existsSync(cmd)) {
     await runPipeline({ audioPath: cmd, ...common });
   } else {

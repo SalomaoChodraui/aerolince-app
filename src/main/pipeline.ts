@@ -14,7 +14,7 @@ import { estimateCostUSD } from '../core/llm/anthropic.js';
 import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import type { LLMProvider } from '../core/llm/types.js';
 import type { LLMUsage } from '../core/llm/types.js';
-import { getMask, loadLibrary } from '../core/masks/library.js';
+import { bibliotecasDe, getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
 import { validarAudio } from '../core/stt/audio-guard.js';
@@ -186,7 +186,7 @@ interface Selecao {
 async function processarTranscript(transcript: string, sttMs: number): Promise<ResultadoPipeline> {
   const config = getConfig();
   exigirChaves(config);
-  const masks = loadLibrary(config.masksDir);
+  const masks = loadLibrary(bibliotecasDe(config));
   const san = sanitizeComando(transcript);
   const { llm, modelos } = criarLLM(config);
 
@@ -243,7 +243,7 @@ export async function gerarComMascara(
 ): Promise<ResultadoLaudo> {
   const config = getConfig();
   exigirChaves(config);
-  const masks = loadLibrary(config.masksDir);
+  const masks = loadLibrary(bibliotecasDe(config));
   const mask = getMask(masks, maskId);
   if (!mask) throw new Error(`máscara não encontrada: ${maskId}`);
   const san = sanitizeComando(transcript);
