@@ -211,11 +211,18 @@ function App() {
           <h2>Pastas e modelos</h2>
           <div className="linha">
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="rot">Biblioteca de máscaras</div>
+              <div className="rot">Minha biblioteca (aprendida)</div>
               <div className="desc" style={{ wordBreak: 'break-all' }}>{cfg.masksDir}</div>
             </div>
             <button onClick={() => api.abrirPasta(cfg.masksDir)}>Abrir</button>
             <button onClick={() => escolher('masksDir')}>Trocar…</button>
+          </div>
+          <div className="linha">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="rot">Biblioteca base (do app)</div>
+              <div className="desc" style={{ wordBreak: 'break-all' }}>{cfg.bibliotecaBaseDir}</div>
+            </div>
+            <button onClick={() => api.abrirPasta(cfg.bibliotecaBaseDir)}>Abrir</button>
           </div>
           <div className="linha">
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -228,7 +235,7 @@ function App() {
           <div className="linha">
             <div>
               <div className="rot">Editar minhas frases padrão</div>
-              <div className="desc">Abre a pasta das máscaras e regras — edite os arquivos .md em qualquer editor</div>
+              <div className="desc">Abre a sua biblioteca — edite os arquivos .md em qualquer editor. Alterações aqui valem para você: quando o id coincide com o da biblioteca base, a sua versão substitui a base.</div>
             </div>
             <button onClick={() => api.abrirPasta(cfg.masksDir)}>Abrir pasta</button>
           </div>
