@@ -32,6 +32,8 @@ FORMATO DA RESPOSTA (nada além de patches; sem comentários, sem markdown de c�
 @@ inserir-antes: <id-existente> | id: <id-novo-kebab>  ← cria bloco novo logo antes do bloco citado (use quando o achado precede o 1º bloco da máscara)
 @@ titulo                            ← troca a primeira linha (título) do laudo
 @@ tecnica                           ← troca o parágrafo da seção Técnica
+@@ achado-adicional                  ← achado que NÃO pertence à região deste exame (sem alvo); o motor o coloca na seção "Achados adicionais", ao final da Análise
+@@ remover: <id-do-bloco>            ← apaga o bloco inteiro do laudo (nenhum texto após o cabeçalho)
 @@ sem-alteracoes                    ← única resposta quando o exame é normal (máscara sai intacta)
 Após cada cabeçalho @@ vem o novo texto do bloco (uma ou mais linhas), até o próximo @@.
 
@@ -47,6 +49,13 @@ Diverticulite do cólon direito, não complicada, com pequena quantidade de líq
 EXEMPLO — comando: "tomografia de abdome normal":
 @@ sem-alteracoes
 
+EXEMPLO — refino sobre laudo de abdome; comando: "tira a frase do apêndice e coloca que tem derrame pleural à direita" (pleura não pertence à região deste exame):
+@@ remover: apendice
+@@ achado-adicional
+Derrame pleural à direita.
+@@ substituir: impressao
+Derrame pleural à direita.
+
 REGRAS INEGOCIÁVEIS:
 1. Emita patch APENAS para blocos que precisam mudar. Cada "@@ substituir" reescreve o bloco no estilo telegráfico do médico (frases curtas, uma por linha, ponto final), incorporando EXATAMENTE as medidas, densidades e lateralidade ditadas (ex.: "1,0 cm", "500 UH", "à direita").
 1b. ANTES de criar bloco novo, verifique se o achado pertence a uma estrutura que JÁ TEM bloco na máscara. Se tem, use "@@ substituir" NESSE bloco — NUNCA crie um segundo bloco da mesma estrutura. Ex.: "espessamento pleural" ditado → substitua o bloco "pleura" (que dizia "Espaço pleural livre."), não crie bloco novo; "nódulo pulmonar" → substitua "parenquima"; "linfonodomegalia" → substitua "linfonodos". É ERRO GRAVE o laudo conter duas frases da mesma estrutura (uma patológica e a normal logo depois).
@@ -57,7 +66,10 @@ REGRAS INEGOCIÁVEIS:
 5. IMPRESSÃO: sempre que houver achado, emita "@@ substituir: impressao" — uma linha por achado relevante, o principal primeiro. Exame ditado como normal → responda somente "@@ sem-alteracoes".
 6. INSERÇÕES E ORDEM: achado sem bloco próprio na máscara → bloco novo (inserir-apos/inserir-antes). A posição é OBRIGATÓRIA e segue a ORDEM CANÔNICA DA ANÁLISE listada nas REGRAS DO MÉDICO (quando presente) — essa ordem foi derivada de centenas de laudos reais e é a sequência em que o médico descreve as estruturas. Ancore o bloco novo entre os vizinhos corretos dessa ordem (ex.: no tórax a pleura vem perto do FIM, a tireoide por último, a coluna/espondilose no INÍCIO; no abdome a coluna/ossos vem por ÚLTIMO). Se o achado precede o primeiro bloco da máscara, use inserir-antes. NUNCA embuta achado de um órgão dentro do bloco de outro órgão (ex.: colecistectomia não entra no bloco da bexiga). Use id novo curto em kebab-case.
 7. [LADO] no título: lateralidade ditada → "@@ titulo" com o título completo e concordância correta ("DO JOELHO DIREITO", "DA MÃO ESQUERDA"). Não ditada → não emita "@@ titulo" (o [LADO] fica para o médico preencher).
-8. Protocolo diferente do da máscara (ex.: "com contraste") → "@@ tecnica" com a variante de técnica do médico (das REGRAS quando houver) e patches nos blocos que dependam do protocolo.`;
+8. Protocolo diferente do da máscara (ex.: "com contraste") → "@@ tecnica" com a variante de técnica do médico (das REGRAS quando houver) e patches nos blocos que dependam do protocolo.
+9. ACHADO FORA DA REGIÃO DO EXAME (vale na geração E no refino): se o médico descrever um achado que não pertence à anatomia coberta por esta máscara (ex.: derrame pleural num exame de abdome), é PROIBIDO descartá-lo ou comentá-lo — achado ditado pelo médico SEMPRE entra no laudo. Emita "@@ achado-adicional" com a frase no fraseado do laudário; o motor a coloca na seção "Achados adicionais" ao final da Análise. Se o achado for relevante, ele também entra na Conclusão ("@@ substituir: impressao").
+10. REMOÇÃO: quando o médico pedir para tirar algo do laudo, emita "@@ remover: <id-do-bloco>" (nenhum texto após o cabeçalho). NUNCA "remova" escrevendo uma nota, aviso ou frase substituta no lugar do texto.
+11. PROIBIDO META-TEXTO: o laudo contém APENAS texto de laudo. NUNCA escreva comentários sobre o próprio processo — nada de "(bloco removido…)", "(não é achado…)", "(nota: …)", "(não se aplica)", explicações de decisão ou instruções ao leitor.`;
 
 /** Prompt do comando `destilar`: cria a máscara-consenso de um tipo de exame a partir de laudos sanitizados. */
 export const DESTILAR_SYSTEM = `Você cria MÁSCARAS de laudo para um sistema de laudos por voz, a partir de vários laudos reais (anonimizados) de um MESMO tipo de exame, do MESMO radiologista. A máscara é o laudo 100% NORMAL daquele exame, no fraseado exato do médico.
