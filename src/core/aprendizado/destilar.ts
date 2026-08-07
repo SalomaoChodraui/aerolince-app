@@ -27,22 +27,29 @@ function stripCercas(texto: string): string {
  * `corpusPorPrefixos`/`corpusPorArquivos`). Escreve o rascunho em
  * `<masksDir>/_rascunhos/<id>.md` — NUNCA direto na biblioteca; o médico
  * revisa e promove com `aplicarRascunho`.
+ *
+ * `prefixos` é OPCIONAL (compat com o fluxo antigo da CLI, que ecoava os
+ * prefixos do acervo no `user` para o `DESTILAR_SYSTEM` refletir no
+ * frontmatter `prefixos:` da máscara gerada). Chamadas sem `prefixos`
+ * (ex.: um wizard que já resolveu os arquivos por outro caminho) simplesmente
+ * omitem a linha.
  */
 export async function destilarMascara(
-  params: { id: string; arquivos: string[]; masksDir: string },
+  params: { id: string; arquivos: string[]; masksDir: string; prefixos?: string[] },
   o: OpcoesAprendizado,
 ): Promise<ResultadoAprendizado> {
-  const { id, arquivos, masksDir } = params;
+  const { id, arquivos, masksDir, prefixos } = params;
 
   o.onProgresso?.({ etapa: 'montando corpus', atual: 1, total: 3 });
   const { corpus } = montarCorpus(arquivos);
 
   if (o.cancelado?.()) throw new Error('destilação cancelada antes da chamada ao LLM');
   o.onProgresso?.({ etapa: 'destilando com o LLM', atual: 2, total: 3 });
+  const cabecalho = prefixos && prefixos.length > 0 ? `id: ${id}\nprefixos: [${prefixos.join(', ')}]` : `id: ${id}`;
   const r = await o.llm.complete({
     model: o.modelo,
     system: [{ text: DESTILAR_SYSTEM, cache: true }],
-    user: `id: ${id}\n\n${corpus}`,
+    user: `${cabecalho}\n\n${corpus}`,
     maxTokens: 2500,
   });
   const custoUSD = estimateCostUSD(o.modelo, r.usage);

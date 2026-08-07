@@ -112,4 +112,34 @@ describe('destilarMascara', () => {
     );
     expect(eventos.length).toBeGreaterThan(0);
   });
+
+  it('o `user` enviado ao LLM carrega o corpus JÁ RE-SANITIZADO (nome plantado vira [NOME], nunca o nome cru)', async () => {
+    const arquivoComNome = join(dir, 'laudo-com-nome.md');
+    writeFileSync(arquivoComNome, '---\nexame: tc-cranio\n---\nPaciente: João da Silva.\nSem alterações.');
+    const llm = fakeLLM(['conteudo']);
+
+    await destilarMascara({ id: 'tc-cranio', arquivos: [arquivoComNome], masksDir }, { llm, modelo: 'claude-haiku-4-5' });
+
+    const user = llm.chamadas[0]?.user ?? '';
+    expect(user).toContain('[NOME]');
+    expect(user).not.toMatch(/Jo[aã]o/i);
+    expect(user).not.toMatch(/Silva/i);
+  });
+
+  it('prefixos OPCIONAL ausente → sem a linha "prefixos:" no `user`', async () => {
+    const llm = fakeLLM(['conteudo']);
+    await destilarMascara({ id: 'tc-cranio', arquivos, masksDir }, { llm, modelo: 'claude-haiku-4-5' });
+
+    expect(llm.chamadas[0]?.user).not.toContain('prefixos:');
+  });
+
+  it('prefixos OPCIONAL presente → linha "prefixos: [...]" no `user` (como a CLI antiga fazia)', async () => {
+    const llm = fakeLLM(['conteudo']);
+    await destilarMascara(
+      { id: 'tc-cranio', arquivos, masksDir, prefixos: ['TC-CRANIO', 'CRANIO-SC'] },
+      { llm, modelo: 'claude-haiku-4-5' },
+    );
+
+    expect(llm.chamadas[0]?.user).toContain('prefixos: [TC-CRANIO, CRANIO-SC]');
+  });
 });

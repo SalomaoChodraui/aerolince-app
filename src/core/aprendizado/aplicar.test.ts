@@ -168,3 +168,47 @@ describe('descartarRascunho', () => {
     expect(() => descartarRascunho(masksDir, 'nao-existe.md')).toThrow(/n[aã]o encontrado/i);
   });
 });
+
+describe('proteção contra path traversal (CRITICAL)', () => {
+  let base: string;
+  let masksDir: string;
+  let fora: string;
+
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), 'aprendizado-traversal-'));
+    masksDir = join(base, 'biblioteca');
+    mkdirSync(join(masksDir, '_rascunhos'), { recursive: true });
+    // Um nível ACIMA de masksDir — alvo do PoC "../../x.txt" a partir de _rascunhos/.
+    fora = join(base, 'x.txt');
+    writeFileSync(fora, 'ARQUIVO EXTERNO — NÃO DEVE SER TOCADO');
+  });
+
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('descartarRascunho("../../x.txt") lança e o arquivo externo continua existindo (reproduz o PoC do reviewer)', () => {
+    expect(() => descartarRascunho(masksDir, '../../x.txt')).toThrow();
+    expect(existsSync(fora)).toBe(true);
+    expect(readFileSync(fora, 'utf8')).toBe('ARQUIVO EXTERNO — NÃO DEVE SER TOCADO');
+  });
+
+  it('aplicarRascunho("../../x.txt") lança e o arquivo externo continua existindo (reproduz o PoC do reviewer)', () => {
+    expect(() => aplicarRascunho(masksDir, '../../x.txt')).toThrow();
+    expect(existsSync(fora)).toBe(true);
+    expect(readFileSync(fora, 'utf8')).toBe('ARQUIVO EXTERNO — NÃO DEVE SER TOCADO');
+  });
+
+  it('".." isolado (sem nenhuma barra) também é bloqueado — bypass de um check ingênuo por basename', () => {
+    // path.basename('..') === '..', então um check só `arquivo !== basename(arquivo)` deixaria
+    // passar; mas join(_rascunhos, '..') sobe direto para masksDir sem nenhum separador no input.
+    expect(() => descartarRascunho(masksDir, '..')).toThrow();
+    expect(() => aplicarRascunho(masksDir, '..')).toThrow();
+    expect(existsSync(masksDir)).toBe(true);
+  });
+
+  it('"." isolado também é rejeitado', () => {
+    expect(() => descartarRascunho(masksDir, '.')).toThrow();
+    expect(() => aplicarRascunho(masksDir, '.')).toThrow();
+  });
+});

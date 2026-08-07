@@ -5,7 +5,7 @@
  * também protege a curadoria manual existente com backup `.bak`.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { MaskFrontmatterSchema } from '../masks/schema.js';
 
@@ -19,6 +19,18 @@ const REGRAS_RE = /^regras-(.+)\.md$/;
 
 function rascunhosDir(masksDir: string): string {
   return join(masksDir, '_rascunhos');
+}
+
+/**
+ * Barreira contra path traversal: `arquivo` é sempre um NOME DE ARQUIVO dentro de
+ * `_rascunhos/`, nunca um caminho. Rejeita qualquer coisa com separador de diretório
+ * (`../../x.txt` etc.) e os componentes especiais `.`/`..` (que escapam via `join()`
+ * mesmo sem separador — `join(dir, '..')` sobe um nível sem nenhuma barra no input).
+ */
+function validarNomeRascunho(arquivo: string): void {
+  if (!arquivo || arquivo === '.' || arquivo === '..' || arquivo !== basename(arquivo)) {
+    throw new Error(`nome de rascunho inválido: ${arquivo}`);
+  }
 }
 
 function classificar(arquivo: string): { tipo: 'mascara' | 'regras'; alvo: string } {
@@ -47,6 +59,7 @@ function destinoDe(masksDir: string, tipo: 'mascara' | 'regras', alvo: string): 
  * (zod) lança erro claro e NÃO toca o destino nem o rascunho.
  */
 export function aplicarRascunho(masksDir: string, arquivo: string): { destino: string; backup?: string } {
+  validarNomeRascunho(arquivo);
   const origem = join(rascunhosDir(masksDir), arquivo);
   if (!existsSync(origem)) throw new Error(`rascunho não encontrado: ${arquivo}`);
 
@@ -78,6 +91,7 @@ export function aplicarRascunho(masksDir: string, arquivo: string): { destino: s
 
 /** Descarta um rascunho sem aplicá-lo. */
 export function descartarRascunho(masksDir: string, arquivo: string): void {
+  validarNomeRascunho(arquivo);
   const origem = join(rascunhosDir(masksDir), arquivo);
   if (!existsSync(origem)) throw new Error(`rascunho não encontrado: ${arquivo}`);
   unlinkSync(origem);

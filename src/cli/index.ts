@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
-import { aplicarRascunho, listarRascunhos } from '../core/aprendizado/aplicar.js';
+import { aplicarRascunho, descartarRascunho, listarRascunhos } from '../core/aprendizado/aplicar.js';
 import { aprenderRegras } from '../core/aprendizado/aprender.js';
 import { corpusPorPrefixos } from '../core/aprendizado/corpus.js';
 import { destilarMascara } from '../core/aprendizado/destilar.js';
@@ -306,7 +306,7 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
   const { llm, modelos } = criarLLM(config);
   process.stdout.write(`Destilando ${id} de ${arquivos.length} laudos… `);
   const t0 = performance.now();
-  const r = await destilarMascara({ id, arquivos, masksDir: config.masksDir }, { llm, modelo: modelos.geracao });
+  const r = await destilarMascara({ id, arquivos, masksDir: config.masksDir, prefixos }, { llm, modelo: modelos.geracao });
   console.log(`${fmt(performance.now() - t0)} (custo ${fmtCusto(r.custoUSD)})`);
   console.log(`  → ${r.arquivo}`);
   console.log(`  revise e rode: laudo aplicar ${id}.md`);
@@ -323,7 +323,8 @@ function mostrarRascunhos() {
   console.log(
     rascunhos.map((r) => `${r.arquivo}  [${r.tipo === 'mascara' ? 'máscara' : 'regras'} → ${r.alvo}]`).join('\n'),
   );
-  console.log('\nAplicar com: laudo aplicar <arquivo>  |  descartar apagando o arquivo em _rascunhos/');
+  console.log('\nlaudo aplicar <arquivo>   — promove para a biblioteca (com backup .bak se já existir)');
+  console.log('laudo descartar <arquivo> — apaga o rascunho sem aplicar');
 }
 
 /** Promove um rascunho (`_rascunhos/<arquivo>`) para a biblioteca, com backup se já existir destino. */
@@ -333,6 +334,14 @@ function aplicar(arquivo: string) {
   const r = aplicarRascunho(config.masksDir, arquivo);
   console.log(`✓ aplicado em ${r.destino}`);
   if (r.backup) console.log(`  (versão anterior preservada em ${r.backup})`);
+}
+
+/** Descarta um rascunho (`_rascunhos/<arquivo>`) sem aplicá-lo. */
+function descartar(arquivo: string) {
+  if (!arquivo) throw new Error('uso: laudo descartar <arquivo>  (veja os pendentes com `laudo rascunhos`)');
+  const config = loadConfig(APP_ROOT);
+  descartarRascunho(config.masksDir, arquivo);
+  console.log(`✓ descartado: ${arquivo}`);
 }
 
 /** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
@@ -469,11 +478,13 @@ async function main() {
     mostrarRascunhos();
   } else if (cmd === 'aplicar') {
     aplicar(positional[1] ?? '');
+  } else if (cmd === 'descartar') {
+    descartar(positional[1] ?? '');
   } else if (cmd && existsSync(cmd)) {
     await runPipeline({ audioPath: cmd, ...common });
   } else {
     console.log(
-      'Uso:\n  npm run laudo -- texto "<comando>"\n  npm run laudo -- gravar\n  npm run laudo -- <arquivo de áudio>\n  npm run laudo -- masks\n  npm run laudo -- destilar <id-novo> <PREFIXO1> [PREFIXO2…]\n  npm run laudo -- aprender [<id>|todos]\n  npm run laudo -- rascunhos\n  npm run laudo -- aplicar <arquivo>\n  npm run eval\nFlags: --mask <id> --perfil <id> --fast --dry-run',
+      'Uso:\n  npm run laudo -- texto "<comando>"\n  npm run laudo -- gravar\n  npm run laudo -- <arquivo de áudio>\n  npm run laudo -- masks\n  npm run laudo -- destilar <id-novo> <PREFIXO1> [PREFIXO2…]\n  npm run laudo -- aprender [<id>|todos]\n  npm run laudo -- rascunhos\n  npm run laudo -- aplicar <arquivo>\n  npm run laudo -- descartar <arquivo>\n  npm run eval\nFlags: --mask <id> --perfil <id> --fast --dry-run',
     );
   }
 }

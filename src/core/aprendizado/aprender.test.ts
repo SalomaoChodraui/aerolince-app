@@ -95,4 +95,17 @@ describe('aprenderRegras', () => {
     expect(llm.chamadas).toHaveLength(1);
     expect(existsSync(join(masksDir, '_rascunhos', 'regras-tc-abdome.md'))).toBe(false);
   });
+
+  it('o `user` enviado ao LLM carrega o corpus JÁ RE-SANITIZADO (nome plantado vira [NOME], nunca o nome cru)', async () => {
+    const arquivoComNome = join(dir, 'laudo-com-nome.md');
+    writeFileSync(arquivoComNome, '---\nexame: tc-cranio\n---\nPaciente: João da Silva.\nSem alterações.');
+    const llm = fakeLLM(['regras extraidas']);
+
+    await aprenderRegras({ maskId: 'tc-cranio', arquivos: [arquivoComNome], masksDir }, { llm, modelo: 'claude-haiku-4-5' });
+
+    const user = llm.chamadas[0]?.user ?? '';
+    expect(user).toContain('[NOME]');
+    expect(user).not.toMatch(/Jo[aã]o/i);
+    expect(user).not.toMatch(/Silva/i);
+  });
 });
