@@ -7,23 +7,35 @@ import { join } from 'node:path';
 import matter from 'gray-matter';
 import { Config } from './config/schema.js';
 
-/** REGRAS DO MÉDICO (gerais + da máscara) e FRASÁRIO aplicável, se existirem. */
+/** REGRAS DO MÉDICO (gerais + da máscara) e FRASÁRIO aplicável, em camadas base → médico. */
 export function loadRegras(config: Config, maskId: string): string | undefined {
+  const camadas = [config.bibliotecaBaseDir, config.masksDir]; // médico por último = vence
   const parts: string[] = [];
-  const regrasDir = join(config.masksDir, 'regras');
+
+  // Regras: resolução POR ARQUIVO — a versão do médico substitui a da base
   for (const f of ['gerais.md', `${maskId}.md`]) {
-    const p = join(regrasDir, f);
-    if (existsSync(p)) parts.push(readFileSync(p, 'utf8').trim());
+    let escolhido: string | undefined;
+    for (const dir of camadas) {
+      const p = join(dir, 'regras', f);
+      if (existsSync(p)) escolhido = p;
+    }
+    if (escolhido) parts.push(readFileSync(escolhido, 'utf8').trim());
   }
-  // Frasário dos médicos: arquivos com frontmatter `aplica_a: [mask-ids]` (vazio = todas)
-  const frasarioDir = join(config.masksDir, 'frasario');
-  if (existsSync(frasarioDir)) {
-    for (const f of readdirSync(frasarioDir).filter((x) => x.endsWith('.md')).sort()) {
-      const { data, content } = matter(readFileSync(join(frasarioDir, f), 'utf8'));
-      const aplica = Array.isArray(data.aplica_a) ? (data.aplica_a as string[]) : [];
-      if (aplica.length === 0 || aplica.includes(maskId)) {
-        parts.push(`FRASÁRIO PRONTO DOS MÉDICOS (${f}) — use estas frases quando o achado ditado corresponder:\n${content.trim()}`);
-      }
+
+  // Frasário: união das camadas; mesmo nome de arquivo → vence o do médico
+  const arquivos = new Map<string, string>(); // nome → caminho vencedor
+  for (const dir of camadas) {
+    const frasarioDir = join(dir, 'frasario');
+    if (!existsSync(frasarioDir)) continue;
+    for (const f of readdirSync(frasarioDir).filter((x) => x.endsWith('.md'))) {
+      arquivos.set(f, join(frasarioDir, f));
+    }
+  }
+  for (const [f, caminho] of [...arquivos.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const { data, content } = matter(readFileSync(caminho, 'utf8'));
+    const aplica = Array.isArray(data.aplica_a) ? (data.aplica_a as string[]) : [];
+    if (aplica.length === 0 || aplica.includes(maskId)) {
+      parts.push(`FRASÁRIO PRONTO DOS MÉDICOS (${f}) — use estas frases quando o achado ditado corresponder:\n${content.trim()}`);
     }
   }
   return parts.length > 0 ? parts.join('\n\n') : undefined;
