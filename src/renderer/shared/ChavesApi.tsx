@@ -31,11 +31,14 @@ export function ChavesApi({
   provider,
   compacto,
   onStatus,
+  onAcao,
 }: {
   provider: 'anthropic' | 'openai';
   /** true no onboarding: esconde a linha do Moonshot. */
   compacto?: boolean;
   onStatus?: (s: StatusCofre) => void;
+  /** Chamado só nos sucessos de salvar/remover (ex.: Settings usa para o flash "✓ salvo"). */
+  onAcao?: () => void;
 }) {
   const [cofre, setCofre] = useState<StatusCofre | null>(null);
   const [teste, setTeste] = useState<Record<string, string>>({});
@@ -73,6 +76,7 @@ export function ChavesApi({
       setCofre(novoCofre);
       setNovaChave((s) => ({ ...s, [nome]: '' }));
       setTeste((s) => ({ ...s, [nome]: '' }));
+      onAcao?.();
       if (novoCofre.chaves[nome] === 'ok') void rodarTeste(nome); // feedback imediato
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -86,6 +90,7 @@ export function ChavesApi({
     try {
       setCofre(await api.secretsSet(nome, ''));
       setTeste((s) => ({ ...s, [nome]: '' }));
+      onAcao?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErroChave(msg.replace(/^Error invoking remote method '[^']+': Error: /, ''));

@@ -142,7 +142,7 @@ function App() {
 
         <div className="secao">
           <h2>Chaves de API</h2>
-          <ChavesApi provider={cfg.llm.provider} />
+          <ChavesApi provider={cfg.llm.provider} onAcao={flashSalvo} />
         </div>
 
         <div className="secao">
