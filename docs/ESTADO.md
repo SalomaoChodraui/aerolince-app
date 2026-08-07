@@ -4,10 +4,16 @@ _Atualizado em 20/07/2026, após o merge do áudio segmentado + ajustes de UX. E
 
 ## ⏩ Comece por aqui
 
-1. **Próxima frente: Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02
+1. **Bloco 1 do reposicionamento (spec 2026-08-07) mergeado** — BYOK com motor selecionável
+   (anthropic|openai), factory `criarLLM`, gate `chavesNecessarias`, `ChavesApi` compartilhado,
+   onboarding bloqueante (spec e plano em `docs/superpowers/specs/2026-08-07-inteligencia-do-medico-byok-design.md`
+   e `docs/superpowers/plans/2026-08-07-bloco1-byok-provedores.md`). Próximos blocos do mesmo
+   reposicionamento: **Bloco 2** (biblioteca base embarcada em camadas) e **Bloco 3** (ingestão
+   de acervo + aprendizado in-app) — planos ainda por escrever.
+2. **Próxima frente: Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02
    (patch JSON estruturado), QA-01 (golden set clínico) — fazer plano SDD próprio (decisão de
    20/07; definições em `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
-2. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
+3. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
    **validar o ditado segmentado com fala real** (itens novos em "Pendências de teste").
 
 ## O que o produto faz (funcionando)
@@ -156,6 +162,12 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
 - [ ] Configurações → Captura de voz "Clássica" → fluxo antigo funciona
 - [ ] **Colar um laudo no RIS real da clínica** (Word + campo simples também) — teste-chave que falta
 - [ ] Plantão inteiro de TC → medir aceitação (meta ≥80% "usaria com edição mínima")
+- [ ] **Smoke manual do Bloco 1 (BYOK)** — gates automatizados (test/typecheck/build) passaram
+      07/08, mas o smoke visual do `npm run dev` não foi possível no ambiente de execução (sem
+      GUI) e fica pendente: (a) Settings mostra motor + chaves coerentes e trocar motor atualiza
+      as descrições; (b) onboarding via "Guia rápido" com gate de chaves — Continuar/concluir
+      desabilitados sem chave válida, dots redirecionam para o passo de chaves; (c) ditado real
+      gera laudo no motor padrão; (d) modo "Só OpenAI" gera laudo com uma chave só.
 
 ## Backlog priorizado (próximas frentes)
 
@@ -180,9 +192,11 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
    clipboard (Electron suporta) ou digitação simulada.
 5. **Novos tipos de exame** — RM/US/RX (o schema de máscara já tem `modalidade`); repetir
    o método destilar→aprender→ordem canônica.
-6. **Fase 2 (produto)**: backend próprio com as chaves da empresa (esconde chave, billing,
-   margem), Kimi/DeepSeek auto-hospedado em VPS (a flag `--kimi` já existe para testar),
-   assinatura de código (Apple US$ 99/ano; Windows Azure Trusted Signing), auto-update.
+6. ~~Fase 2 (produto): backend próprio com as chaves da empresa~~ — **morto pelo BYOK** (Bloco 1,
+   07/08): o médico usa as próprias chaves (OpenAI e/ou Anthropic), motor selecionável na
+   Settings. Licença/ativação fica p/ rodada futura. Segue valendo: Kimi/DeepSeek auto-hospedado
+   em VPS (a flag `--kimi` já existe para testar), assinatura de código (Apple US$ 99/ano; Windows
+   Azure Trusted Signing), auto-update.
 
 ## Notas e riscos
 
