@@ -23,20 +23,27 @@ export function loadRegras(config: Config, maskId: string): string | undefined {
   }
 
   // Frasário: união das camadas; mesmo nome de arquivo → vence o do médico
-  const arquivos = new Map<string, string>(); // nome → caminho vencedor
-  for (const dir of camadas) {
+  const arquivos = new Map<string, { caminho: string; origem: 'base' | 'medico' }>(); // nome → vencedor
+  camadas.forEach((dir, i) => {
+    const origem = i === camadas.length - 1 ? 'medico' : 'base';
     const frasarioDir = join(dir, 'frasario');
-    if (!existsSync(frasarioDir)) continue;
+    if (!existsSync(frasarioDir)) return;
     for (const f of readdirSync(frasarioDir).filter((x) => x.endsWith('.md'))) {
-      arquivos.set(f, join(frasarioDir, f));
+      arquivos.set(f, { caminho: join(frasarioDir, f), origem });
     }
-  }
-  for (const [f, caminho] of [...arquivos.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  });
+  const aplicaveis: { f: string; origem: 'base' | 'medico'; corpo: string }[] = [];
+  for (const [f, { caminho, origem }] of [...arquivos.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const { data, content } = matter(readFileSync(caminho, 'utf8'));
     const aplica = Array.isArray(data.aplica_a) ? (data.aplica_a as string[]) : [];
-    if (aplica.length === 0 || aplica.includes(maskId)) {
-      parts.push(`FRASÁRIO PRONTO DOS MÉDICOS (${f}) — use estas frases quando o achado ditado corresponder:\n${content.trim()}`);
-    }
+    if (aplica.length === 0 || aplica.includes(maskId)) aplicaveis.push({ f, origem, corpo: content.trim() });
+  }
+  // Dedup por CONTEÚDO: cópia da BASE sai quando o médico tem o MESMO corpo sob
+  // outro nome (a base renomeou arquivos com nome de médico; sem isto o prompt duplicaria)
+  const corposDoMedico = new Set(aplicaveis.filter((a) => a.origem === 'medico').map((a) => a.corpo));
+  for (const { f, origem, corpo } of aplicaveis) {
+    if (origem === 'base' && corposDoMedico.has(corpo)) continue;
+    parts.push(`FRASÁRIO PRONTO DOS MÉDICOS (${f}) — use estas frases quando o achado ditado corresponder:\n${corpo}`);
   }
   return parts.length > 0 ? parts.join('\n\n') : undefined;
 }

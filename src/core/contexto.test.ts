@@ -41,6 +41,26 @@ describe('loadRegras em camadas', () => {
     expect(r).toContain('FRASE BASE B');
   });
 
+  it('frasário: cópia da base com corpo idêntico ao do médico sob OUTRO nome sai — corpo 1 vez, citando o arquivo do médico', () => {
+    const { base, medico, config } = setup();
+    const corpo = 'FRASE DUPLICADA C';
+    writeFileSync(join(base, 'frasario', 'achados-x.md'), `---\naplica_a: []\n---\n${corpo}`, 'utf8');
+    writeFileSync(join(medico, 'frasario', 'antigo-nome.md'), `---\naplica_a: []\n---\n${corpo}`, 'utf8');
+    const r = loadRegras(config, 'tc-cranio')!;
+    expect(r.split(corpo).length - 1).toBe(1);
+    expect(r).toContain('(antigo-nome.md)');
+    expect(r).not.toContain('(achados-x.md)');
+  });
+
+  it('frasário: corpos DIFERENTES sob nomes diferentes → ambos entram', () => {
+    const { base, medico, config } = setup();
+    writeFileSync(join(base, 'frasario', 'achados-x.md'), '---\naplica_a: []\n---\nCORPO DA BASE', 'utf8');
+    writeFileSync(join(medico, 'frasario', 'antigo-nome.md'), '---\naplica_a: []\n---\nCORPO DO MEDICO', 'utf8');
+    const r = loadRegras(config, 'tc-cranio')!;
+    expect(r).toContain('CORPO DA BASE');
+    expect(r).toContain('CORPO DO MEDICO');
+  });
+
   it('aplica_a continua filtrando por máscara', () => {
     const { base, config } = setup();
     writeFileSync(join(base, 'frasario', 'so-torax.md'), '---\naplica_a: [tc-torax]\n---\nSO TORAX', 'utf8');
