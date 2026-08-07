@@ -11,10 +11,17 @@ import { join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import { loadConfig } from '../src/core/config/schema.js';
 import { estimateCostUSD } from '../src/core/llm/anthropic.js';
-import { criarLLM } from '../src/core/llm/factory.js';
+import { chavesNecessarias, criarLLM } from '../src/core/llm/factory.js';
 
 const LIMITE_KB = Number(process.argv[2] ?? 20);
 const config = loadConfig(process.cwd());
+
+const faltando = chavesNecessarias(config).filter((k) => !process.env[k]);
+if (faltando.length > 0) {
+  console.error(`ERRO: variável(is) ${faltando.join(', ')} não definida(s) — defina no app/.env`);
+  process.exit(1);
+}
+
 const dir = join(config.masksDir, 'frasario');
 const originais = join(dir, '_originais');
 mkdirSync(originais, { recursive: true });
