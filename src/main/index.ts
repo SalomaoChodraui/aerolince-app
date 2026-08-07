@@ -284,15 +284,27 @@ async function processar(fn: () => Promise<ResultadoPipeline>): Promise<{ ok: bo
 function bootstrap(): string {
   const root = app.isPackaged ? app.getPath('userData') : app.getAppPath();
   if (app.isPackaged) {
+    const baseDir = join(process.resourcesPath, 'biblioteca-base');
     const cfgPath = join(root, 'laudo.config.json');
     if (!existsSync(cfgPath)) {
-      const masksDir = join(root, 'biblioteca-mascaras');
+      const masksDir = join(root, 'biblioteca-medico');
       const profilesDir = join(root, 'perfis');
       const outputDir = join(root, 'Laudos Gerados');
       mkdirSync(outputDir, { recursive: true });
+      for (const sub of ['regras', 'frasario', '_rascunhos']) mkdirSync(join(masksDir, sub), { recursive: true });
       cpSync(join(process.resourcesPath, 'perfis'), profilesDir, { recursive: true });
-      cpSync(join(process.resourcesPath, 'masks-exemplo'), masksDir, { recursive: true });
-      writeFileSync(cfgPath, JSON.stringify({ masksDir, profilesDir, outputDir }, null, 2), 'utf8');
+      writeFileSync(
+        cfgPath,
+        JSON.stringify({ masksDir, profilesDir, outputDir, bibliotecaBaseDir: baseDir }, null, 2),
+        'utf8',
+      );
+    } else {
+      // Self-heal: o caminho de resources muda a cada versão instalada — realinha
+      // a base sem tocar na biblioteca do médico.
+      try {
+        const c = loadConfig(root);
+        if (c.bibliotecaBaseDir !== baseDir) saveConfig(root, { bibliotecaBaseDir: baseDir });
+      } catch { /* config irrecuperável já é tratada pelo loadConfig */ }
     }
   }
   carregarChaves(root);
