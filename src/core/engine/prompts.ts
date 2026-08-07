@@ -69,7 +69,8 @@ REGRAS INEGOCIÁVEIS:
 8. Protocolo diferente do da máscara (ex.: "com contraste") → "@@ tecnica" com a variante de técnica do médico (das REGRAS quando houver) e patches nos blocos que dependam do protocolo.
 9. ACHADO FORA DA REGIÃO DO EXAME (vale na geração E no refino): se o médico descrever um achado que não pertence à anatomia coberta por esta máscara (ex.: derrame pleural num exame de abdome), é PROIBIDO descartá-lo ou comentá-lo — achado ditado pelo médico SEMPRE entra no laudo. Emita "@@ achado-adicional" com a frase no fraseado do laudário; o motor a coloca na seção "Achados adicionais" ao final da Análise. Se o achado for relevante, ele também entra na Conclusão ("@@ substituir: impressao").
 10. REMOÇÃO: quando o médico pedir para tirar algo do laudo, emita "@@ remover: <id-do-bloco>" (nenhum texto após o cabeçalho). NUNCA "remova" escrevendo uma nota, aviso ou frase substituta no lugar do texto.
-11. PROIBIDO META-TEXTO: o laudo contém APENAS texto de laudo. NUNCA escreva comentários sobre o próprio processo — nada de "(bloco removido…)", "(não é achado…)", "(nota: …)", "(não se aplica)", explicações de decisão ou instruções ao leitor.`;
+11. PROIBIDO META-TEXTO: o laudo contém APENAS texto de laudo. NUNCA escreva comentários sobre o próprio processo — nada de "(bloco removido…)", "(não é achado…)", "(nota: …)", "(não se aplica)", explicações de decisão ou instruções ao leitor.
+12. SÍNTESE DA CONCLUSÃO (vale na geração E no refino): a Conclusão SINTETIZA, não repete — cada achado descrito no corpo vira a expressão diagnóstica curta correspondente (ex.: corpo "Aorta de paredes irregulares, com placas ateromatosas calcificadas ao longo do seu trajeto, apresentando tortuosidade e sem redução de calibre significativa." → conclusão "Ateromatose aórtica, sem estenose significativa."). NUNCA copie a frase descritiva inteira do corpo para a conclusão. Quando o contexto trouxer PARES DE SÍNTESE DA CONCLUSÃO, use-os como referência do nível de condensação DESTE médico; achado sem par correspondente é condensado no mesmo espírito. EXCEÇÃO IMPORTANTE: se o médico ditar a conclusão explicitamente, vale o que ele ditou — não re-sintetize nem "melhore".`;
 
 /** Prompt do comando `destilar`: cria a máscara-consenso de um tipo de exame a partir de laudos sanitizados. */
 export const DESTILAR_SYSTEM = `Você cria MÁSCARAS de laudo para um sistema de laudos por voz, a partir de vários laudos reais (anonimizados) de um MESMO tipo de exame, do MESMO radiologista. A máscara é o laudo 100% NORMAL daquele exame, no fraseado exato do médico.
@@ -129,6 +130,27 @@ Como ele monta a Análise (ordem) e a Conclusão: o que entra na conclusão, o q
 Como escreve medidas (vírgula decimal, unidades), lateralidade e gradações de intensidade (mínima/pequena/leve/acentuada), com exemplos literais.
 
 Seja estritamente fiel ao corpus: copie frases literais, não invente convenções. Marque com "(raro)" o que tiver poucas ocorrências. Responda só com o documento.`;
+
+/** Prompt da destilação de SÍNTESE DA CONCLUSÃO: extrai os pares descrição (corpo) → expressão curta (conclusão) do médico. */
+export const SINTESE_SYSTEM = `Você é o módulo de aprendizado de SÍNTESE DA CONCLUSÃO de um sistema de laudos radiológicos. Receberá vários laudos reais (anonimizados) de um MESMO tipo de exame, todos do MESMO radiologista. Em cada laudo, a Análise (corpo) descreve os achados em frases longas e a Conclusão (ou Opinião) os condensa em expressões diagnósticas curtas. Extraia os PARES corpo → conclusão que este médico de fato usa.
+
+FORMATO OBRIGATÓRIO da saída (documento markdown, e nada além dele — este arquivo será editado à mão pelo médico, mantenha exatamente o formato de duas linhas por par):
+
+## Síntese da conclusão — <id do exame informado>
+
+- corpo: <frase do achado como o médico a escreve na Análise>
+  conclusão: <expressão curta correspondente, como ele a escreve na Conclusão>
+
+Exemplo do NÍVEL de condensação esperado (só entra no resultado se observado no corpus):
+- corpo: Aorta de paredes irregulares, com placas ateromatosas calcificadas ao longo do seu trajeto, apresentando tortuosidade e sem redução de calibre significativa.
+  conclusão: Ateromatose aórtica, sem estenose significativa.
+
+REGRAS:
+1. FIDELIDADE LITERAL: as duas frases de cada par são copiadas dos laudos (a variante mais frequente de cada lado). NUNCA invente, complete ou "melhore" fraseado.
+2. SÓ PARES REALMENTE OBSERVADOS: um par só entra se o MESMO laudo tiver a frase no corpo E a expressão correspondente na Conclusão. Achado que nunca aparece na Conclusão não vira par. Nada de pares hipotéticos.
+3. Ordene do par mais frequente no corpus para o menos frequente. Máximo ~40 pares.
+4. Frases de normalidade não geram par (conclusão de exame normal não é síntese de achado).
+5. Responda SOMENTE com o documento markdown, sem cercas de código.`;
 
 export function generationProfileBlock(profileName: string, profileBody: string): string {
   return `PERFIL DE ESTILO ATIVO: ${profileName}\n${profileBody}`;
