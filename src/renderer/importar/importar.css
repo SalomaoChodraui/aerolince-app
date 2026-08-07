@@ -209,6 +209,23 @@
   color: var(--oxido);
   flex-shrink: 0;
 }
+/* Barra de progresso do alvo ativo (passo 5 — "rodando"): trilho discreto dentro da
+   própria linha do alvo, preenchimento na cor de marca — mesmo par de tokens da
+   `.imp-barra` do passo 2, só mais fina por caber dentro de uma linha de lista. */
+.imp-alvo-bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--linha);
+  overflow: hidden;
+  margin-top: 6px;
+}
+.imp-alvo-bar > div {
+  height: 100%;
+  background: var(--oxido);
+  transition: width 0.2s;
+}
 .imp-total {
   text-align: center;
   font-size: 15px;

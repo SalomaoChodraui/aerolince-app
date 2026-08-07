@@ -549,14 +549,10 @@ function App() {
                 {progressoAcervo && (
                   <>
                     <div className="imp-barra">
-                      <div
-                        style={{
-                          width: `${Math.round((progressoAcervo.atual / Math.max(1, progressoAcervo.total)) * 100)}%`,
-                        }}
-                      />
+                      <div style={{ width: `${pct(progressoAcervo.atual, progressoAcervo.total)}%` }} />
                     </div>
                     <div className="desc">
-                      {progressoAcervo.atual} / {progressoAcervo.total}
+                      {progressoAcervo.atual} de {progressoAcervo.total} · {pct(progressoAcervo.atual, progressoAcervo.total)}%
                     </div>
                     {progressoAcervo.arquivo && <div className="imp-progresso-arquivo">{progressoAcervo.arquivo}</div>}
                   </>
@@ -705,22 +701,32 @@ function App() {
               // O resultado final (ok/falha) é a fonte de verdade sobre o desfecho — o
               // último evento de progresso recebido ("gravando rascunho") não distingue
               // sucesso de cancelamento a meio do caminho.
+              const emAndamentoAlvo = !ok && !falha && !!p;
               const status = falha
                 ? `falhou: ${falha.erro}`
                 : ok
                   ? 'concluído'
                   : p
-                    ? `${p.etapa} (${p.atual}/${p.total})`
+                    ? `${p.etapa} (${p.atual}/${p.total} — ${pct(p.atual, p.total)}%)`
                     : resultadoLote
                       ? 'cancelado antes de começar'
                       : 'aguardando…';
               return (
                 <div className="linha imp-alvo" key={`${a.tipo}-${a.maskId}-${i}`}>
-                  <div>
+                  <div style={{ width: '100%' }}>
                     <div className="imp-alvo-rot">
                       {a.tipo === 'destilar' ? 'Criar máscara' : 'Aprender fraseado'}: {a.maskId}
                     </div>
                     <div className="imp-alvo-sub">{status}</div>
+                    {/* Barra POR ALVO (em vez de um "alvo K de N" global): o aprendizado roda
+                        sequencial e só devolve ok/falha de TODOS de uma vez ao final — não há
+                        sinal confiável de "quantos já terminaram" no meio do lote, só o
+                        progresso (atual/total) do alvo ativo no momento. */}
+                    {emAndamentoAlvo && (
+                      <div className="imp-alvo-bar">
+                        <div style={{ width: `${pct(p.atual, p.total)}%` }} />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
