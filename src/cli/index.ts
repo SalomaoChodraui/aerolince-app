@@ -11,14 +11,17 @@
  */
 import 'dotenv/config';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
+import { aplicarRascunho, listarRascunhos } from '../core/aprendizado/aplicar.js';
+import { aprenderRegras } from '../core/aprendizado/aprender.js';
+import { corpusPorPrefixos } from '../core/aprendizado/corpus.js';
+import { destilarMascara } from '../core/aprendizado/destilar.js';
 import { loadConfig, type Config } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
-import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import { AVISO_BIBLIOTECA_VAZIA, bibliotecasDe, buildCatalog, contarMascaras, getMask, loadLibrary } from '../core/masks/library.js';
@@ -255,31 +258,15 @@ function sanitizedDir(config: Config): string {
   throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
 }
 
-/** Arquivos sanitizados cujo nome começa com algum dos prefixos (mais recentes por último). */
-function corpusFiles(
-  sanDir: string,
-  prefixos: string[],
-  cap: number,
-  filtro?: { contendo?: string; sem?: string },
-): string[] {
-  let files = readdirSync(sanDir)
-    .filter((f) => prefixos.some((p) => f.startsWith(`${p}_`)))
-    .sort();
-  if (filtro?.contendo || filtro?.sem) {
-    files = files.filter((f) => {
-      const text = readFileSync(join(sanDir, f), 'utf8');
-      if (filtro.contendo && !text.includes(filtro.contendo)) return false;
-      if (filtro.sem && text.includes(filtro.sem)) return false;
-      return true;
-    });
-  }
-  return files.slice(-cap);
+/** Formata o custo estimado no mesmo texto usado por todo o resto da CLI. */
+function fmtCusto(custoUSD: number | null): string {
+  return custoUSD === null ? 'não estimado' : `≈ US$ ${custoUSD.toFixed(3)}`;
 }
 
 /**
  * Camada de inteligência: lê os laudos SANITIZADOS do acervo e destila as
- * REGRAS DO MÉDICO (limites de protocolo, frasário patológico, estrutura),
- * que passam a ser injetadas em toda geração daquela máscara.
+ * REGRAS DO MÉDICO (limites de protocolo, frasário patológico, estrutura) via
+ * `core/aprendizado`. Casca fina: monta o corpus, delega ao core, imprime UX.
  */
 async function aprender(target: string) {
   const config = loadConfig(APP_ROOT);
@@ -289,40 +276,19 @@ async function aprender(target: string) {
   const alvo = target === 'todos' ? masks.filter((m) => m.prefixos.length > 0) : masks.filter((m) => m.id === target);
   if (alvo.length === 0) throw new Error(`nenhuma máscara com prefixos para "${target}"`);
   const { llm, modelos } = criarLLM(config);
-  const regrasDir = join(config.masksDir, 'regras');
-  mkdirSync(regrasDir, { recursive: true });
   for (const m of alvo) {
     const id = m.id;
-    const files = corpusFiles(sanDir, m.prefixos, 60, {
-      contendo: m.corpus_contendo,
-      sem: m.corpus_sem,
-    });
-    if (files.length === 0) {
+    const arquivos = corpusPorPrefixos(sanDir, m.prefixos, 60, { contendo: m.corpus_contendo, sem: m.corpus_sem });
+    if (arquivos.length === 0) {
       console.warn(`nenhum laudo sanitizado para ${id} (prefixos: ${m.prefixos.join(', ')})`);
       continue;
     }
-    const corpus = files
-      .map((f, i) => `─── LAUDO ${i + 1} ───\n${readFileSync(join(sanDir, f), 'utf8').trim()}`)
-      .join('\n\n');
-    process.stdout.write(`Aprendendo ${id} com ${files.length} laudos… `);
+    process.stdout.write(`Aprendendo ${id} com ${arquivos.length} laudos… `);
     const t0 = performance.now();
-    const r = await llm.complete({
-      model: modelos.geracao,
-      system: [{ text: APRENDER_SYSTEM, cache: true }],
-      user: `Tipo de exame: ${id}\n\n${corpus}`,
-      maxTokens: 4000,
-    });
-    const custoAprender = estimateCostUSD(modelos.geracao, r.usage);
-    console.log(
-      `${fmt(performance.now() - t0)} (custo ${custoAprender === null ? 'não estimado' : `≈ US$ ${custoAprender.toFixed(3)}`})`,
-    );
-    const out = join(regrasDir, `${id}.md`);
-    writeFileSync(
-      out,
-      `<!-- RASCUNHO gerado automaticamente de ${files.length} laudos — REVISE e edite à vontade; o sistema usa este arquivo em toda geração desta máscara -->\n\n${r.text.trim()}\n`,
-      'utf8',
-    );
-    console.log(`  → ${out}`);
+    const r = await aprenderRegras({ maskId: id, arquivos, masksDir: config.masksDir }, { llm, modelo: modelos.geracao });
+    console.log(`${fmt(performance.now() - t0)} (custo ${fmtCusto(r.custoUSD)})`);
+    console.log(`  → rascunho: ${r.arquivo}`);
+    console.log(`  revise e rode: laudo aplicar regras-${id}.md`);
   }
 }
 
@@ -335,30 +301,38 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
   const config = loadConfig(APP_ROOT);
   requireEnv(chavesNecessarias(config));
   const sanDir = sanitizedDir(config);
-  const files = corpusFiles(sanDir, prefixos, 40, filtro);
-  if (files.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
-  const corpus = files
-    .map((f, i) => `─── LAUDO ${i + 1} ───\n${readFileSync(join(sanDir, f), 'utf8').trim()}`)
-    .join('\n\n');
+  const arquivos = corpusPorPrefixos(sanDir, prefixos, 40, filtro);
+  if (arquivos.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
   const { llm, modelos } = criarLLM(config);
-  process.stdout.write(`Destilando ${id} de ${files.length} laudos… `);
+  process.stdout.write(`Destilando ${id} de ${arquivos.length} laudos… `);
   const t0 = performance.now();
-  const r = await llm.complete({
-    model: modelos.geracao,
-    system: [{ text: DESTILAR_SYSTEM, cache: true }],
-    user: `id: ${id}\nprefixos: [${prefixos.join(', ')}]\n\n${corpus}`,
-    maxTokens: 2500,
-  });
-  const custoDestilar = estimateCostUSD(modelos.geracao, r.usage);
+  const r = await destilarMascara({ id, arquivos, masksDir: config.masksDir }, { llm, modelo: modelos.geracao });
+  console.log(`${fmt(performance.now() - t0)} (custo ${fmtCusto(r.custoUSD)})`);
+  console.log(`  → ${r.arquivo}`);
+  console.log(`  revise e rode: laudo aplicar ${id}.md`);
+}
+
+/** Lista os rascunhos pendentes de `destilar`/`aprender` (`_rascunhos/`). */
+function mostrarRascunhos() {
+  const config = loadConfig(APP_ROOT);
+  const rascunhos = listarRascunhos(config.masksDir);
+  if (rascunhos.length === 0) {
+    console.log('nenhum rascunho pendente em ' + join(config.masksDir, '_rascunhos'));
+    return;
+  }
   console.log(
-    `${fmt(performance.now() - t0)} (custo ${custoDestilar === null ? 'não estimado' : `≈ US$ ${custoDestilar.toFixed(3)}`})`,
+    rascunhos.map((r) => `${r.arquivo}  [${r.tipo === 'mascara' ? 'máscara' : 'regras'} → ${r.alvo}]`).join('\n'),
   );
-  const dir = join(config.masksDir, '_rascunhos');
-  mkdirSync(dir, { recursive: true });
-  const out = join(dir, `${id}.md`);
-  const text = r.text.trim().replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/, '');
-  writeFileSync(out, `${text}\n`, 'utf8');
-  console.log(`  → ${out} (rascunho — revisar e mover para a biblioteca)`);
+  console.log('\nAplicar com: laudo aplicar <arquivo>  |  descartar apagando o arquivo em _rascunhos/');
+}
+
+/** Promove um rascunho (`_rascunhos/<arquivo>`) para a biblioteca, com backup se já existir destino. */
+function aplicar(arquivo: string) {
+  if (!arquivo) throw new Error('uso: laudo aplicar <arquivo>  (veja os pendentes com `laudo rascunhos`)');
+  const config = loadConfig(APP_ROOT);
+  const r = aplicarRascunho(config.masksDir, arquivo);
+  console.log(`✓ aplicado em ${r.destino}`);
+  if (r.backup) console.log(`  (versão anterior preservada em ${r.backup})`);
 }
 
 /** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
@@ -491,11 +465,15 @@ async function main() {
   } else if (cmd === 'masks') {
     const masks = loadMasks(loadConfig(APP_ROOT));
     console.log(masks.map((m) => `${m.id} — ${m.nome} (v${m.versao}, ${m.origem})`).join('\n'));
+  } else if (cmd === 'rascunhos') {
+    mostrarRascunhos();
+  } else if (cmd === 'aplicar') {
+    aplicar(positional[1] ?? '');
   } else if (cmd && existsSync(cmd)) {
     await runPipeline({ audioPath: cmd, ...common });
   } else {
     console.log(
-      'Uso:\n  npm run laudo -- texto "<comando>"\n  npm run laudo -- gravar\n  npm run laudo -- <arquivo de áudio>\n  npm run laudo -- masks\n  npm run eval\nFlags: --mask <id> --perfil <id> --fast --dry-run',
+      'Uso:\n  npm run laudo -- texto "<comando>"\n  npm run laudo -- gravar\n  npm run laudo -- <arquivo de áudio>\n  npm run laudo -- masks\n  npm run laudo -- destilar <id-novo> <PREFIXO1> [PREFIXO2…]\n  npm run laudo -- aprender [<id>|todos]\n  npm run laudo -- rascunhos\n  npm run laudo -- aplicar <arquivo>\n  npm run eval\nFlags: --mask <id> --perfil <id> --fast --dry-run',
     );
   }
 }
