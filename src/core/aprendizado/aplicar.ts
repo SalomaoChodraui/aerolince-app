@@ -23,14 +23,42 @@ function rascunhosDir(masksDir: string): string {
 
 /**
  * Barreira contra path traversal: `arquivo` é sempre um NOME DE ARQUIVO dentro de
- * `_rascunhos/`, nunca um caminho. Rejeita qualquer coisa com separador de diretório
- * (`../../x.txt` etc.) e os componentes especiais `.`/`..` (que escapam via `join()`
- * mesmo sem separador — `join(dir, '..')` sobe um nível sem nenhuma barra no input).
+ * `_rascunhos/`, nunca um caminho. Rejeita:
+ * - qualquer `/` ou `\` explícito — checado por conteúdo, não via `basename()`, para não
+ *   depender da semântica de separador do SO (POSIX não trata `\` como separador; um
+ *   `arquivo` com `\` passaria por `arquivo === basename(arquivo)` rodando em Mac/Linux
+ *   mesmo sendo um vetor de traversal em Windows) nem de um refactor futuro de `node:path`;
+ * - os componentes especiais `.`/`..` (escapam via `join()` mesmo sem nenhuma barra —
+ *   `join(dir, '..')` sobe um nível sem nada disso aparecer no input);
+ * - divergência de `basename()` como rede de segurança adicional para qualquer outro caso.
+ *
+ * Exportada para reuso defensivo (ex.: `lerRascunho` abaixo, ou validações equivalentes
+ * na T5/Electron).
  */
-function validarNomeRascunho(arquivo: string): void {
-  if (!arquivo || arquivo === '.' || arquivo === '..' || arquivo !== basename(arquivo)) {
+export function validarNomeRascunho(arquivo: string): void {
+  if (
+    !arquivo ||
+    arquivo === '.' ||
+    arquivo === '..' ||
+    arquivo.includes('/') ||
+    arquivo.includes('\\') ||
+    arquivo !== basename(arquivo)
+  ) {
     throw new Error(`nome de rascunho inválido: ${arquivo}`);
   }
+}
+
+/**
+ * Lê o conteúdo de um rascunho (`<masksDir>/_rascunhos/<arquivo>`) sem promovê-lo nem
+ * descartá-lo. Valida `arquivo` com `validarNomeRascunho` antes de tocar o disco — usado
+ * pela T5 (main/Electron) para exibir o rascunho na UI sem reimplementar a leitura (e sem
+ * reabrir a porta de path traversal fechada aqui).
+ */
+export function lerRascunho(masksDir: string, arquivo: string): string {
+  validarNomeRascunho(arquivo);
+  const origem = join(rascunhosDir(masksDir), arquivo);
+  if (!existsSync(origem)) throw new Error(`rascunho não encontrado: ${arquivo}`);
+  return readFileSync(origem, 'utf8');
 }
 
 function classificar(arquivo: string): { tipo: 'mascara' | 'regras'; alvo: string } {

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { aplicarRascunho, descartarRascunho, listarRascunhos } from './aplicar.js';
+import { aplicarRascunho, descartarRascunho, lerRascunho, listarRascunhos, validarNomeRascunho } from './aplicar.js';
 
 const MASCARA_VALIDA = `---
 id: tc-cranio
@@ -210,5 +210,52 @@ describe('proteção contra path traversal (CRITICAL)', () => {
   it('"." isolado também é rejeitado', () => {
     expect(() => descartarRascunho(masksDir, '.')).toThrow();
     expect(() => aplicarRascunho(masksDir, '.')).toThrow();
+  });
+
+  it('nome com "\\" (barra invertida, vetor Windows) é bloqueado mesmo rodando em POSIX', () => {
+    // Em POSIX, path.basename() NÃO trata "\" como separador — um check baseado só em
+    // `arquivo !== basename(arquivo)` deixaria "..\\..\\x.txt" passar (basename devolve a
+    // própria string inalterada). O guard precisa rejeitar "\" explicitamente por conteúdo.
+    const comBarraInvertida = '..\\..\\x.txt';
+    expect(() => descartarRascunho(masksDir, comBarraInvertida)).toThrow();
+    expect(() => aplicarRascunho(masksDir, comBarraInvertida)).toThrow();
+    expect(existsSync(fora)).toBe(true);
+    expect(readFileSync(fora, 'utf8')).toBe('ARQUIVO EXTERNO — NÃO DEVE SER TOCADO');
+  });
+
+  it('validarNomeRascunho, exportada para reuso defensivo, rejeita "/" e "\\" diretamente', () => {
+    expect(() => validarNomeRascunho('a/b.md')).toThrow();
+    expect(() => validarNomeRascunho('a\\b.md')).toThrow();
+    expect(() => validarNomeRascunho('regras-tc-cranio.md')).not.toThrow();
+  });
+});
+
+describe('lerRascunho', () => {
+  let masksDir: string;
+
+  beforeEach(() => {
+    masksDir = mkdtempSync(join(tmpdir(), 'aprendizado-ler-'));
+    mkdirSync(join(masksDir, '_rascunhos'), { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(masksDir, { recursive: true, force: true });
+  });
+
+  it('nome válido → devolve o conteúdo do rascunho sem promovê-lo nem descartá-lo', () => {
+    writeFileSync(join(masksDir, '_rascunhos', 'tc-cranio.md'), MASCARA_VALIDA);
+
+    expect(lerRascunho(masksDir, 'tc-cranio.md')).toBe(MASCARA_VALIDA);
+    // não promove nem descarta — o rascunho continua exatamente onde estava
+    expect(existsSync(join(masksDir, '_rascunhos', 'tc-cranio.md'))).toBe(true);
+    expect(existsSync(join(masksDir, 'tc-cranio.md'))).toBe(false);
+  });
+
+  it('"../x" lança (mesmo guard de traversal de aplicarRascunho/descartarRascunho)', () => {
+    expect(() => lerRascunho(masksDir, '../x')).toThrow();
+  });
+
+  it('rascunho inexistente → erro claro', () => {
+    expect(() => lerRascunho(masksDir, 'nao-existe.md')).toThrow(/n[aã]o encontrado/i);
   });
 });
