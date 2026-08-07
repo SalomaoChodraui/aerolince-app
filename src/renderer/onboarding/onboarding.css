@@ -52,17 +52,20 @@ kbd {
   border-radius: 6px;
   padding: 1px 6px;
 }
-.onb-aviso {
-  margin-top: 22px;
-  padding: 14px 16px;
-  background: var(--oxido-suave);
-  border: 1px solid color-mix(in srgb, var(--oxido) 40%, transparent);
-  border-radius: 12px;
-  font-size: 13.5px;
+.onb-chaves {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  align-items: flex-start;
+}
+.onb-motor {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+}
+.onb-motor label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 .onb-nav {
   margin-top: auto;

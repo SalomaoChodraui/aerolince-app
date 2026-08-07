@@ -5,10 +5,13 @@ import '../shared/window.css';
 import './onboarding.css';
 import { SimboloA } from '../shared/SimboloA.js';
 import { iniciarTema } from '../shared/glass.js';
+import { ChavesApi } from '../shared/ChavesApi.js';
+import type { RendererConfig } from '../shared/types.js';
 
 const api = window.aerolince;
 
 interface Passo {
+  id: string;
   icone: React.ReactNode;
   titulo: string;
   corpo: React.ReactNode;
@@ -16,6 +19,7 @@ interface Passo {
 
 const PASSOS: Passo[] = [
   {
+    id: 'bem-vindo',
     icone: <SimboloA size={52} />,
     titulo: 'Bem-vindo ao Aerolince',
     corpo: (
@@ -26,6 +30,7 @@ const PASSOS: Passo[] = [
     ),
   },
   {
+    id: 'ditar',
     icone: <span className="passo-emoji">🎙️</span>,
     titulo: 'Dite de qualquer lugar',
     corpo: (
@@ -37,6 +42,7 @@ const PASSOS: Passo[] = [
     ),
   },
   {
+    id: 'privacidade',
     icone: <span className="passo-emoji">🔒</span>,
     titulo: 'Voz na nuvem, laudo no seu computador',
     corpo: (
@@ -50,6 +56,13 @@ const PASSOS: Passo[] = [
     ),
   },
   {
+    id: 'chaves',
+    icone: <span className="passo-emoji">🔑</span>,
+    titulo: 'Suas chaves de API',
+    corpo: null, // renderizado como componente vivo (abaixo)
+  },
+  {
+    id: 'revisar',
     icone: <span className="passo-emoji">📋</span>,
     titulo: 'Revise e cole',
     corpo: (
@@ -60,6 +73,7 @@ const PASSOS: Passo[] = [
     ),
   },
   {
+    id: 'bandeja',
     icone: <span className="passo-emoji">⚙️</span>,
     titulo: 'Tudo no menu da bandeja',
     corpo: (
@@ -71,20 +85,48 @@ const PASSOS: Passo[] = [
   },
 ];
 
+const CHAVES_IDX = PASSOS.findIndex((p) => p.id === 'chaves');
+
 function App() {
   const [i, setI] = useState(0);
-  const [temChaves, setTemChaves] = useState(true);
+  const [provider, setProvider] = useState<'anthropic' | 'openai'>('anthropic');
+  const [chavesOk, setChavesOk] = useState(false);
+
+  function avaliar(s: { chaves: Record<string, string> }, p: 'anthropic' | 'openai') {
+    const okOpenai = s.chaves['OPENAI_API_KEY'] === 'ok';
+    return p === 'anthropic' ? okOpenai && s.chaves['ANTHROPIC_API_KEY'] === 'ok' : okOpenai;
+  }
 
   useEffect(() => {
     void iniciarTema();
     void (async () => {
+      const c = (await api.configGet()) as RendererConfig;
+      setProvider(c.llm.provider);
       const s = await api.secretsStatus();
-      setTemChaves(s.chaves.ANTHROPIC_API_KEY === 'ok' && s.chaves.OPENAI_API_KEY === 'ok');
+      setChavesOk(avaliar(s, c.llm.provider));
     })();
   }, []);
 
+  async function trocarMotor(p: 'anthropic' | 'openai') {
+    setProvider(p);
+    const c = (await api.configSet({
+      llm:
+        p === 'openai'
+          ? { provider: p, selectionModel: 'gpt-5-mini', generationModel: 'gpt-5-mini', fastModel: 'gpt-5-mini' }
+          : { provider: p, selectionModel: 'claude-haiku-4-5', generationModel: 'claude-haiku-4-5', fastModel: 'claude-haiku-4-5' },
+    })) as RendererConfig;
+    const s = await api.secretsStatus();
+    setChavesOk(avaliar(s, c.llm.provider));
+  }
+
+  function irPara(k: number) {
+    // Dots não pulam o gate: à frente do passo de chaves sem chavesOk, cai no passo de chaves.
+    setI(!chavesOk && k > CHAVES_IDX ? CHAVES_IDX : k);
+  }
+
   const ultimo = i === PASSOS.length - 1;
   const passo = PASSOS[i]!;
+  const noPassoChaves = passo.id === 'chaves';
 
   return (
     <div className="janela onb">
@@ -93,21 +135,37 @@ function App() {
       </div>
       <div className="onb-conteudo">
         <h1>{passo.titulo}</h1>
-        <p>{passo.corpo}</p>
-
-        {ultimo && !temChaves && (
-          <div className="onb-aviso">
-            Falta configurar suas <b>chaves de API</b> (Claude e transcrição) para começar a laudar.
-            <button className="primario" onClick={() => api.abrir('settings')}>
-              Abrir configurações
-            </button>
+        {noPassoChaves ? (
+          <div className="onb-chaves">
+            <p>
+              O Aerolince funciona com <b>as suas chaves de API</b> — você paga centavos por laudo direto ao
+              provedor (~R$ 0,02–0,09 por laudo), sem mensalidade de inteligência embutida.
+            </p>
+            <p className="desc">
+              Crie sua chave OpenAI em <b>platform.openai.com/api-keys</b>
+              {provider === 'anthropic' && <> e sua chave Claude em <b>console.anthropic.com</b></>}
+              . Cole abaixo — elas ficam só no cofre criptografado do seu computador.
+            </p>
+            <div className="onb-motor">
+              <label>
+                <input type="radio" checked={provider === 'anthropic'} onChange={() => trocarMotor('anthropic')} />
+                OpenAI + Anthropic (recomendado)
+              </label>
+              <label>
+                <input type="radio" checked={provider === 'openai'} onChange={() => trocarMotor('openai')} />
+                Só OpenAI (uma chave para tudo)
+              </label>
+            </div>
+            <ChavesApi provider={provider} compacto onStatus={(s) => setChavesOk(avaliar(s, provider))} />
           </div>
+        ) : (
+          <p>{passo.corpo}</p>
         )}
 
         <div className="onb-nav">
           <div className="onb-dots">
             {PASSOS.map((_, k) => (
-              <span key={k} className={k === i ? 'on' : ''} onClick={() => setI(k)} />
+              <span key={k} className={k === i ? 'on' : ''} onClick={() => irPara(k)} />
             ))}
           </div>
           <div className="onb-botoes">
@@ -117,11 +175,16 @@ function App() {
               </button>
             )}
             {!ultimo ? (
-              <button className="primario" onClick={() => setI(i + 1)}>
+              <button
+                className="primario"
+                onClick={() => setI(i + 1)}
+                disabled={noPassoChaves && !chavesOk}
+                title={noPassoChaves && !chavesOk ? 'Salve e valide as chaves para continuar' : undefined}
+              >
                 Continuar
               </button>
             ) : (
-              <button className="primario" onClick={() => api.concluirOnboarding()}>
+              <button className="primario" onClick={() => api.concluirOnboarding()} disabled={!chavesOk}>
                 Começar a laudar
               </button>
             )}
