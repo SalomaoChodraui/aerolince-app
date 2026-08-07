@@ -1,0 +1,8 @@
+TOMOGRAFIA COMPUTADORIZADA DO CRANIO
+
+Tecnica: exemplo sintetico.
+
+Achados: exemplo sintetico sem correlacao com paciente real, gerado apenas
+para teste automatizado do modulo de extracao de texto local.
+
+Conclusao: laudo ficticio de teste, sem valor clinico.

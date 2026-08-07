@@ -24,6 +24,8 @@ tmp-sanitized/
 laudos-gerados/
 Modelos de Laudos/
 biblioteca-mascaras/
+# Exceção: fixture sintética de teste (sem dado de paciente), ver extrair.test.ts
+!src/core/acervo/fixtures/mini.pdf
 
 # Sistema
 .DS_Store
