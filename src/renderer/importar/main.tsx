@@ -602,6 +602,11 @@ function App() {
                 ))}
               </tbody>
             </table>
+            {resumo.duplicados > 0 && (
+              <div className="desc" style={{ padding: '4px 14px' }}>
+                {resumo.duplicados} já estava(m) no seu acervo — não {resumo.duplicados === 1 ? 'foi importado' : 'foram importados'} de novo.
+              </div>
+            )}
             {resumo.semTexto.length > 0 && (
               <div className="desc" style={{ padding: '4px 14px' }}>
                 {resumo.semTexto.length} arquivo(s) sem texto útil (imagem ou formato não suportado):{' '}

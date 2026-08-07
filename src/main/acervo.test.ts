@@ -18,6 +18,8 @@ function cfg(o: { acervoDir: string }): Config {
   });
 }
 
+const TC_CRANIO_TEXTO = 'TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO\n\nPaciente: JOAO DA SILVA.\nSem alterações relevantes.';
+
 describe('contadoresExistentes (M2 — próximo índice por MAX+1, não por contagem)', () => {
   let dir: string;
 
@@ -100,6 +102,90 @@ describe('importarAcervo — arrastar PASTA (I-wizard-1)', () => {
     } finally {
       rmSync(solto, { force: true });
     }
+  });
+});
+
+describe('importarAcervo — reimportar não duplica (M3)', () => {
+  let origem: string;
+  let acervoDir: string;
+
+  beforeEach(() => {
+    origem = mkdtempSync(join(tmpdir(), 'aerolince-acervo-origem-'));
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-acervo-destino-'));
+  });
+
+  afterEach(() => {
+    rmSync(origem, { recursive: true, force: true });
+    rmSync(acervoDir, { recursive: true, force: true });
+  });
+
+  it('importar o MESMO conteúdo 2×: a segunda vez grava 0 e reporta duplicados=1', async () => {
+    const arquivo = join(origem, 'laudo.txt');
+    writeFileSync(arquivo, TC_CRANIO_TEXTO, 'utf8');
+
+    const r1 = await importarAcervo([arquivo], cfg({ acervoDir }));
+    expect(r1.duplicados).toBe(0);
+    expect(r1.clusters.reduce((s, c) => s + c.quantidade, 0)).toBe(1);
+
+    const r2 = await importarAcervo([arquivo], cfg({ acervoDir }));
+    expect(r2.duplicados).toBe(1);
+    expect(r2.clusters.reduce((s, c) => s + c.quantidade, 0)).toBe(0);
+  });
+
+  it('dois arquivos de CONTEÚDO DIFERENTE: os 2 são gravados, 0 duplicados', async () => {
+    const a = join(origem, 'a.txt');
+    const b = join(origem, 'b.txt');
+    writeFileSync(a, TC_CRANIO_TEXTO, 'utf8');
+    writeFileSync(b, 'TOMOGRAFIA COMPUTADORIZADA DO TORAX\n\nPaciente: MARIA SOUZA.\nOutro achado qualquer.', 'utf8');
+
+    const r = await importarAcervo([a, b], cfg({ acervoDir }));
+    expect(r.duplicados).toBe(0);
+    expect(r.clusters.reduce((s, c) => s + c.quantidade, 0)).toBe(2);
+  });
+
+  it('o MESMO arquivo escolhido 2× no MESMO lote (drag duplicado): só grava 1, reporta 1 duplicado — dedupe também dentro do lote', async () => {
+    const arquivo = join(origem, 'laudo.txt');
+    writeFileSync(arquivo, TC_CRANIO_TEXTO, 'utf8');
+
+    const r = await importarAcervo([arquivo, arquivo], cfg({ acervoDir }));
+    expect(r.duplicados).toBe(1);
+    expect(r.clusters.reduce((s, c) => s + c.quantidade, 0)).toBe(1);
+  });
+
+  it('reimportação PARCIALMENTE nova: 1 repetido + 1 novo → 1 gravado, 1 duplicado', async () => {
+    const a = join(origem, 'a.txt');
+    writeFileSync(a, TC_CRANIO_TEXTO, 'utf8');
+    await importarAcervo([a], cfg({ acervoDir }));
+
+    const bNovo = join(origem, 'b.txt');
+    writeFileSync(bNovo, 'TOMOGRAFIA COMPUTADORIZADA DO TORAX\n\nPaciente: MARIA SOUZA.\nOutro achado qualquer.', 'utf8');
+
+    const r = await importarAcervo([a, bNovo], cfg({ acervoDir }));
+    expect(r.duplicados).toBe(1);
+    expect(r.clusters.reduce((s, c) => s + c.quantidade, 0)).toBe(1);
+  });
+
+  it('cada arquivo entra em EXATAMENTE UM cluster: a soma das quantidades dos clusters é igual ao total de arquivos gravados, sem dupla contagem', async () => {
+    const textos = [
+      'TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO\n\nAchado 1.',
+      'TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO\n\nAchado 2 (mesmo tipo, texto diferente).',
+      'TOMOGRAFIA COMPUTADORIZADA DO TORAX\n\nAchado 3.',
+      'TOMOGRAFIA COMPUTADORIZADA DO ABDOME\n\nAchado 4.',
+    ];
+    const caminhos = textos.map((t, i) => {
+      const p = join(origem, `laudo-${i}.txt`);
+      writeFileSync(p, t, 'utf8');
+      return p;
+    });
+
+    const r = await importarAcervo(caminhos, cfg({ acervoDir }));
+    const somaClusters = r.clusters.reduce((s, c) => s + c.quantidade, 0);
+    const totalArquivosDosClusters = r.clusters.reduce((s, c) => s + c.arquivos.length, 0);
+    expect(somaClusters).toBe(4);
+    expect(totalArquivosDosClusters).toBe(4); // mesma contagem pelos dois caminhos — nenhum arquivo em 2 clusters
+    // Nenhum caminho de arquivo gravado aparece em mais de um cluster.
+    const todosArquivos = r.clusters.flatMap((c) => c.arquivos);
+    expect(new Set(todosArquivos).size).toBe(todosArquivos.length);
   });
 });
 

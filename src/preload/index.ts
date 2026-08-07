@@ -19,6 +19,7 @@ type ResumoImportacao = {
   naoReconhecidos: number;
   amostras: { arquivo: string; texto: string }[];
   suspeitos: number;
+  duplicados: number;
 };
 type AlvoAprendizado = { tipo: 'destilar' | 'aprender'; chave: string; maskId: string; arquivos: string[] };
 type ProgressoAcervo = { fase: 'extraindo' | 'classificando' | 'sanitizando'; atual: number; total: number; arquivo?: string };

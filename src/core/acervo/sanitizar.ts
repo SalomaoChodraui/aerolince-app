@@ -61,8 +61,14 @@ function confiancaDe(classif: Classificacao): 'alta' | 'baixa' {
   return classif.modalidade !== 'desconhecida' && classif.exame !== null ? 'alta' : 'baixa';
 }
 
-/** sha256 do texto ORIGINAL (pré-sanitização), truncado a 12 hex — estável, não reversível. */
-function origemHash(textoOriginal: string): string {
+/**
+ * sha256 do texto ORIGINAL (pré-sanitização), truncado a 12 hex — estável, não
+ * reversível. Exportada (não só usada aqui) porque `main/acervo.ts` precisa da
+ * MESMA função para reconhecer, ao reimportar, um texto já gravado no acervo
+ * (`origem_hash` do frontmatter) — nunca duplicar a fórmula do hash em dois
+ * lugares, ou os dois seriam capazes de divergir silenciosamente.
+ */
+export function origemHash(textoOriginal: string): string {
   return createHash('sha256').update(textoOriginal, 'utf8').digest('hex').slice(0, 12);
 }
 

@@ -4,12 +4,13 @@
  * LLM/rede aqui). `importarAcervo` reporta progresso por evento (o chamador em
  * `index.ts` repassa a TODAS as janelas vivas, mesmo padrão do canal `estado`).
  */
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import { dialog } from 'electron';
+import matter from 'gray-matter';
 import { agruparClusters, classificarDocumento, sugerirMaskId, type Classificacao } from '../core/acervo/classificar.js';
 import { extrairTexto } from '../core/acervo/extrair.js';
-import { corpoDoArquivo, sanitizarParaAcervo } from '../core/acervo/sanitizar.js';
+import { corpoDoArquivo, origemHash, sanitizarParaAcervo } from '../core/acervo/sanitizar.js';
 import type { Config } from '../core/config/schema.js';
 import { bibliotecasDe, loadLibrary } from '../core/masks/library.js';
 
@@ -42,6 +43,8 @@ export interface ResumoImportacao {
   /** Até 3 amostras sanitizadas escolhidas ao acaso — texto já pronto p/ exibição (sem paciente). */
   amostras: { arquivo: string; texto: string }[];
   suspeitos: number;
+  /** Quantos arquivos NÃO foram gravados de novo por já existir no acervo (mesmo `origem_hash`) — conta reimportação, dentro do mesmo lote ou não. */
+  duplicados: number;
 }
 
 /**
@@ -124,6 +127,29 @@ export function contadoresExistentes(acervoDir: string): Map<string, number> {
   return maiorIndice;
 }
 
+/**
+ * `origem_hash` de todo `.md` já gravado em `acervoDir` — usado para reconhecer, ao
+ * reimportar, um texto que já está no acervo (mesmo hash do sha256 do texto ORIGINAL,
+ * pré-sanitização — ver `origemHash` em `sanitizar.ts`) e não gravá-lo de novo (M3: o
+ * médico relatou reimportar a mesma pasta e ver os laudos duplicados). Tolera arquivo
+ * sem frontmatter, com YAML inválido ou ilegível pulando-o — nunca lança, e nunca deixa
+ * de tentar os demais arquivos do diretório.
+ */
+function hashesExistentes(acervoDir: string): Set<string> {
+  const hashes = new Set<string>();
+  if (!existsSync(acervoDir)) return hashes;
+  for (const f of readdirSync(acervoDir)) {
+    if (!f.endsWith('.md')) continue;
+    try {
+      const { data } = matter(readFileSync(join(acervoDir, f), 'utf8'));
+      if (typeof data.origem_hash === 'string') hashes.add(data.origem_hash);
+    } catch {
+      /* frontmatter inválido ou arquivo ilegível — pula, não trava a importação */
+    }
+  }
+  return hashes;
+}
+
 /** Escolhe até `n` itens ao acaso, sem repetição. Reusada por `montarAlvosReaprender` (I3) para as
  *  amostras do consentimento do "Reaprender" — mesmo critério das amostras da importação normal. */
 export function amostraAleatoria<T>(itens: T[], n: number): T[] {
@@ -187,13 +213,27 @@ export async function importarAcervo(
   // `gravadosPorChave` reagrupa os arquivos GRAVADOS (acervoDir) por cluster — é o que o
   // wizard (T6) precisa para montar `AlvoAprendizado.arquivos` (o corpus do aprendizado lê
   // do acervo sanitizado, nunca dos originais em `paths`).
+  //
+  // Dedup por `origem_hash` (M3): reimportar a mesma pasta gravava tudo de novo, porque
+  // nada lia o `origem_hash` já gravado no frontmatter (`sanitizarParaAcervo`). `hashesJaVistos`
+  // começa com os hashes JÁ no acervo e cresce a cada gravação NOVA desta rodada — assim um
+  // arquivo repetido DENTRO do mesmo lote (o médico arrasta a mesma pasta 2x sem querer, ou
+  // escolhe o mesmo arquivo em dois cliques) também é pego, não só entre importações.
   const contadores = contadoresExistentes(config.acervoDir);
+  const hashesJaVistos = hashesExistentes(config.acervoDir);
   let suspeitos = 0;
+  let duplicados = 0;
   const gravados: string[] = [];
   const gravadosPorChave = new Map<string, string[]>();
   for (let i = 0; i < classificados.length; i++) {
     const { caminho, texto, classif } = classificados[i]!;
     onProgresso?.({ fase: 'sanitizando', atual: i + 1, total: classificados.length, arquivo: basename(caminho) });
+    const hash = origemHash(texto);
+    if (hashesJaVistos.has(hash)) {
+      duplicados++;
+      continue; // já está no acervo (ou já foi gravado antes, neste mesmo lote) — não duplica
+    }
+    hashesJaVistos.add(hash);
     const chave = chavePorCaminho.get(caminho)!;
     const indice = (contadores.get(chave) ?? 0) + 1;
     contadores.set(chave, indice);
@@ -211,20 +251,29 @@ export async function importarAcervo(
     gravadosPorChave.set(chave, lista);
   }
 
-  const clusters: ClusterImportacao[] = clustersBrutos.map((c) => ({
-    chave: c.chave,
-    exame: c.exame,
-    modalidade: c.modalidade,
-    contraste: c.contraste,
-    quantidade: c.arquivos.length,
-    maskIdExistente: idsExistentes.has(sugerirMaskId(c)) ? sugerirMaskId(c) : null,
-    arquivos: gravadosPorChave.get(c.chave) ?? [],
-  }));
+  // `quantidade` reflete só os arquivos GRAVADOS nesta rodada (nunca os duplicados que foram
+  // pulados) — sem isso, um cluster com alguns duplicados contaria de mais e a soma das
+  // quantidades divergiria do total de arquivos realmente gravados. Clusters que ficaram
+  // 100% duplicados (quantidade 0) somem da lista — nada para revisar/aprender ali.
+  const clusters: ClusterImportacao[] = clustersBrutos
+    .map((c) => {
+      const arquivos = gravadosPorChave.get(c.chave) ?? [];
+      return {
+        chave: c.chave,
+        exame: c.exame,
+        modalidade: c.modalidade,
+        contraste: c.contraste,
+        quantidade: arquivos.length,
+        maskIdExistente: idsExistentes.has(sugerirMaskId(c)) ? sugerirMaskId(c) : null,
+        arquivos,
+      };
+    })
+    .filter((c) => c.quantidade > 0);
 
   const amostras = amostraAleatoria(gravados, 3).map((arquivo) => ({
     arquivo: basename(arquivo),
     texto: corpoDoArquivo(arquivo),
   }));
 
-  return { clusters, semTexto, naoReconhecidos, amostras, suspeitos };
+  return { clusters, semTexto, naoReconhecidos, amostras, suspeitos, duplicados };
 }
