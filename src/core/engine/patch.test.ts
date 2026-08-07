@@ -88,6 +88,121 @@ Fratura do platô tibial lateral.`;
   });
 });
 
+const MASK_OPINIAO = `TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO
+
+Técnica:
+
+Foram obtidas imagens por aquisição volumétrica.
+
+Análise:
+
+<!-- orgao: parenquima -->
+Parênquima encefálico com morfologia, atenuação e distribuição normais.
+
+Opinião:
+
+<!-- impressao -->
+Exame sem alterações significativas.`;
+
+describe('achado-adicional (achado fora da região do exame)', () => {
+  const SECAO = '<!-- orgao: achados-adicionais -->\nAchados adicionais:\nDerrame pleural à direita.';
+
+  it('cria a seção imediatamente antes de "Conclusão:"', () => {
+    const out = applyPatches(MASK, parsePatches('@@ achado-adicional\nDerrame pleural à direita.'));
+    expect(out).toContain(`${SECAO}\n\nConclusão:`);
+    expect(out.indexOf('Achados adicionais:')).toBeGreaterThan(
+      out.indexOf('Não há sinais de derrame articular.'),
+    );
+  });
+
+  it('cria a seção imediatamente antes de "Opinião:" (crânio)', () => {
+    const out = applyPatches(
+      MASK_OPINIAO,
+      parsePatches('@@ achado-adicional\nDerrame pleural à direita.'),
+    );
+    expect(out).toContain(`${SECAO}\n\nOpinião:`);
+  });
+
+  it('segundo achado adicional na mesma resposta NÃO duplica o rótulo', () => {
+    const out = applyPatches(
+      MASK,
+      parsePatches(
+        '@@ achado-adicional\nDerrame pleural à direita.\n@@ achado-adicional\nNódulo pulmonar basal direito.',
+      ),
+    );
+    expect(out.match(/Achados adicionais:/g)).toHaveLength(1);
+    expect(out).toContain(
+      'Achados adicionais:\nDerrame pleural à direita.\nNódulo pulmonar basal direito.\n\nConclusão:',
+    );
+  });
+
+  it('refino sobre laudo que já tem a seção acrescenta a frase sem duplicar o rótulo', () => {
+    const laudo1 = applyPatches(MASK, parsePatches('@@ achado-adicional\nDerrame pleural à direita.'));
+    const laudo2 = applyPatches(laudo1, parsePatches('@@ achado-adicional\nAteromatose aórtica.'));
+    expect(laudo2.match(/Achados adicionais:/g)).toHaveLength(1);
+    expect(laudo2).toContain(
+      'Achados adicionais:\nDerrame pleural à direita.\nAteromatose aórtica.\n\nConclusão:',
+    );
+  });
+
+  it('máscara sem linha de conclusão (degenerado): acrescenta ao final do corpo', () => {
+    const semConclusao = `Análise:\n\n<!-- orgao: ossos -->\nEstruturas ósseas normais.`;
+    const out = applyPatches(
+      semConclusao,
+      parsePatches('@@ achado-adicional\nDerrame pleural à direita.'),
+    );
+    expect(out.endsWith(SECAO)).toBe(true);
+  });
+
+  it('texto não patcheado continua byte-idêntico à máscara', () => {
+    const out = applyPatches(MASK, parsePatches('@@ achado-adicional\nDerrame pleural à direita.'));
+    expect(out.replace(`${SECAO}\n\n`, '')).toBe(MASK);
+  });
+
+  it('entra em patchedIds como "achados-adicionais", sem duplicar', () => {
+    const ops = parsePatches(
+      '@@ achado-adicional\nDerrame pleural à direita.\n@@ achado-adicional\nAteromatose aórtica.',
+    );
+    expect(patchedIds(ops)).toEqual(['achados-adicionais']);
+  });
+
+  it('achado-adicional sem texto lança PatchError', () => {
+    expect(() => parsePatches('@@ achado-adicional\n')).toThrow(PatchError);
+  });
+});
+
+describe('remover (bloco inteiro, sem buraco de formatação)', () => {
+  it('remove marcador, texto e a linha em branco separadora', () => {
+    const out = applyPatches(MASK, parsePatches('@@ remover: derrame'));
+    expect(out).not.toContain('derrame articular');
+    expect(out).not.toContain('<!-- orgao: derrame -->');
+    expect(out).not.toContain('\n\n\n');
+    expect(out).toContain(
+      'Estruturas ósseas de forma conservada, sem sinais de fraturas.\n\nConclusão:',
+    );
+  });
+
+  it('remove o último bloco sem deixar linhas em branco penduradas', () => {
+    const out = applyPatches(MASK, parsePatches('@@ remover: impressao'));
+    expect(out.endsWith('Conclusão:')).toBe(true);
+  });
+
+  it('bloco inexistente lança PatchError', () => {
+    expect(() => applyPatches(MASK, parsePatches('@@ remover: figado'))).toThrow(
+      /bloco não encontrado/,
+    );
+  });
+
+  it('remover sem id lança PatchError', () => {
+    expect(() => parsePatches('@@ remover:')).toThrow(PatchError);
+  });
+
+  it('entra em patchedIds com o id removido', () => {
+    const ops = parsePatches('@@ remover: derrame\n@@ substituir: impressao\nSem derrame articular.');
+    expect(patchedIds(ops)).toEqual(['derrame', 'impressao']);
+  });
+});
+
 describe('normalização de ids (P0-04)', () => {
   it('normaliza novoId acentuado para ascii kebab-case', () => {
     const ops = parsePatches('@@ inserir-apos: figado | id: vesícula-biliar\nVesícula com cálculo.');
