@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { writeFileAtomicSync } from '../atomic-write.js';
+import { SECOES_PADRAO } from '../output/formatar.js';
 
 /** Atalho/macro do médico: um comando pronto que ele aciona sem ditar. */
 export const MacroSchema = z.object({
@@ -10,6 +11,21 @@ export const MacroSchema = z.object({
   comando: z.string(),
 });
 export type Macro = z.infer<typeof MacroSchema>;
+
+/** Seção do laudo na formatação de SAÍDA (ver src/core/output/formatar.ts). */
+export const SecaoLaudoSchema = z.object({
+  id: z.string(),
+  rotulo: z.string(),
+  ativa: z.boolean(),
+});
+
+const SecaoLaudoParcialSchema = z.object({
+  id: z.string(),
+  rotulo: z.string().optional(),
+  ativa: z.boolean().optional(),
+});
+
+const ParagrafoLaudoSchema = z.enum(['por-bloco', 'corrido']);
 
 export const ConfigSchema = z.object({
   schemaVersion: z.number().default(1),
@@ -53,6 +69,25 @@ export const ConfigSchema = z.object({
     kimiModel: z.string().default('kimi-k2-0905-preview'),
     kimiBaseURL: z.string().default('https://api.moonshot.ai/anthropic'),
   }),
+  // Formatação de SAÍDA do laudo (camada pós-stripMarkers — src/core/output/formatar.ts).
+  // Defaults preservam o comportamento de hoje: ninguém vê mudança sem optar.
+  // 'corrido' = quebra de linha simples dentro da seção; parágrafo só ENTRE seções.
+  // `porExame` sobrepõe o global por maskId (ex.: tc-cranio com "Opinião:"/"Nota:").
+  laudo: z
+    .object({
+      paragrafo: ParagrafoLaudoSchema.default('por-bloco'),
+      secoes: z.array(SecaoLaudoSchema).default(() => SECOES_PADRAO.map((s) => ({ ...s }))),
+      porExame: z
+        .record(
+          z.string(),
+          z.object({
+            paragrafo: ParagrafoLaudoSchema.optional(),
+            secoes: z.array(SecaoLaudoParcialSchema).optional(),
+          }),
+        )
+        .default({}),
+    })
+    .prefault({}),
   // Retenção do histórico de laudos: apaga pares .txt+.json além do prazo na
   // limpeza do boot. 0 = manter sempre (padrão — nunca apaga por tempo).
   historico: z
@@ -199,8 +234,8 @@ export function saveConfig(appRoot: string, patch: Record<string, unknown>): Con
   const file = join(appRoot, CONFIG_FILE);
   const atual = lerOverlayBruto(file);
   const merged: Record<string, unknown> = { ...atual, ...patch, schemaVersion: 1 };
-  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt/historico/onboarding)
-  for (const chave of ['ui', 'llm', 'stt', 'historico', 'onboarding'] as const) {
+  // Preserva os campos aninhados que a tela edita por objeto inteiro (ui/llm/stt/laudo/historico/onboarding)
+  for (const chave of ['ui', 'llm', 'stt', 'laudo', 'historico', 'onboarding'] as const) {
     if (patch[chave]) merged[chave] = { ...((atual[chave] as object | undefined) ?? {}), ...(patch[chave] as object) };
   }
   const config = mesclar(defaultsDe(appRoot), merged); // lança se o patch for inválido — arquivo intacto

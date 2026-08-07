@@ -27,6 +27,24 @@ export interface HistoricoConfig {
   retencaoDias: number;
 }
 
+export type ParagrafoLaudo = 'por-bloco' | 'corrido';
+
+export interface SecaoLaudo {
+  id: string;
+  rotulo: string;
+  ativa: boolean;
+}
+
+/** Formatação de SAÍDA do laudo (espelha o bloco `laudo` de core/config/schema.ts). */
+export interface LaudoConfig {
+  paragrafo: ParagrafoLaudo;
+  secoes: SecaoLaudo[];
+  porExame: Record<
+    string,
+    { paragrafo?: ParagrafoLaudo; secoes?: { id: string; rotulo?: string; ativa?: boolean }[] }
+  >;
+}
+
 export interface OnboardingConfig {
   versao: number;
   passo: number;
@@ -52,6 +70,7 @@ export interface RendererConfig {
   macros: Macro[];
   stt: SttConfig;
   llm: LlmConfig;
+  laudo: LaudoConfig;
   historico: HistoricoConfig;
   onboarding: OnboardingConfig;
 }

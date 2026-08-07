@@ -150,6 +150,55 @@ describe('progresso do onboarding (config)', () => {
   });
 });
 
+describe('formato do laudo (config `laudo`)', () => {
+  it('defaults preservam o comportamento atual: por-bloco, Indicação/Observação inativas', () => {
+    const c = loadConfig(root);
+    expect(c.laudo.paragrafo).toBe('por-bloco');
+    expect(c.laudo.porExame).toEqual({});
+    expect(c.laudo.secoes.map((s) => s.id)).toEqual([
+      'titulo',
+      'tecnica',
+      'indicacao',
+      'achados',
+      'achados-adicionais',
+      'conclusao',
+      'observacao',
+    ]);
+    expect(c.laudo.secoes.find((s) => s.id === 'achados')).toEqual({ id: 'achados', rotulo: 'Análise:', ativa: true });
+    expect(c.laudo.secoes.find((s) => s.id === 'indicacao')!.ativa).toBe(false);
+    expect(c.laudo.secoes.find((s) => s.id === 'observacao')!.ativa).toBe(false);
+  });
+
+  it('config antiga sem o bloco laudo ganha defaults', () => {
+    writeFileSync(
+      join(root, 'laudo.config.json'),
+      JSON.stringify({ schemaVersion: 1, ui: { tema: 'escuro' } }),
+      'utf8',
+    );
+    expect(loadConfig(root).laudo.paragrafo).toBe('por-bloco');
+  });
+
+  it('merge raso de laudo preserva campos não enviados (a preferência persiste)', () => {
+    saveConfig(root, { laudo: { paragrafo: 'corrido' } });
+    saveConfig(root, {
+      laudo: { porExame: { 'tc-cranio': { secoes: [{ id: 'conclusao', rotulo: 'Opinião:' }] } } },
+    });
+    const c = loadConfig(root);
+    expect(c.laudo.paragrafo).toBe('corrido');
+    expect(c.laudo.porExame['tc-cranio']!.secoes![0]).toEqual({ id: 'conclusao', rotulo: 'Opinião:' });
+  });
+
+  it('merge raso preserva laudo ao salvar outra seção', () => {
+    saveConfig(root, { laudo: { paragrafo: 'corrido' } });
+    saveConfig(root, { ui: { tema: 'escuro' } });
+    expect(loadConfig(root).laudo.paragrafo).toBe('corrido');
+  });
+
+  it('paragrafo inválido é rejeitado sem tocar o arquivo', () => {
+    expect(() => saveConfig(root, { laudo: { paragrafo: 'zigue-zague' } })).toThrow();
+  });
+});
+
 describe('retenção do histórico (config)', () => {
   it('config antiga sem o bloco historico ganha default retencaoDias 0', () => {
     writeFileSync(
