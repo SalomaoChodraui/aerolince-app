@@ -84,17 +84,25 @@ function idsDeMascarasExistentes(config: Config): Set<string> {
 /** Nome de arquivo já gravado pelo acervo: `<chave>_<data|s-d>_<nnn>.md` (ver `sanitizar.ts`). */
 const NOME_ARQUIVO_ACERVO = /^(.+)_(?:\d{4}-\d{2}-\d{2}|s-d)_(\d{3})\.md$/;
 
-/** Contagem atual por chave de cluster já gravada em `acervoDir` — para a numeração `nnn` continuar entre importações, nunca sobrescrevendo entradas antigas. */
-function contadoresExistentes(acervoDir: string): Map<string, number> {
-  const contagem = new Map<string, number>();
-  if (!existsSync(acervoDir)) return contagem;
+/**
+ * MAIOR índice `nnn` já gravado por chave de cluster em `acervoDir` — para a numeração
+ * continuar entre importações sem nunca colidir com uma entrada antiga (M2). Antes usava a
+ * CONTAGEM de arquivos, não o máximo: se um arquivo do meio da sequência fosse apagado
+ * (ex.: `001` e `003` existentes, `002` removido), a contagem (2) fazia o próximo índice
+ * calculado pelo chamador (`contagem + 1` = 3) COLIDIR e sobrescrever o `003` já existente.
+ * Exportada só para teste direto.
+ */
+export function contadoresExistentes(acervoDir: string): Map<string, number> {
+  const maiorIndice = new Map<string, number>();
+  if (!existsSync(acervoDir)) return maiorIndice;
   for (const f of readdirSync(acervoDir)) {
     const m = NOME_ARQUIVO_ACERVO.exec(f);
     if (!m) continue;
     const chave = m[1]!;
-    contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+    const indice = Number(m[2]);
+    maiorIndice.set(chave, Math.max(maiorIndice.get(chave) ?? 0, indice));
   }
-  return contagem;
+  return maiorIndice;
 }
 
 /** Escolhe até `n` itens ao acaso, sem repetição. Reusada por `montarAlvosReaprender` (I3) para as

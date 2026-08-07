@@ -218,12 +218,19 @@ function abrirImportar(opts?: { modo?: 'reaprender' }): void {
     },
     modo ? { modo } : undefined,
     () => {
-      // I2(b): fechar a janela de importação varre tempdirs órfãos do corpus do histórico
-      // (Reaprender) que não chegaram a ser lidos por `rodarAprendizado` — ex.: o gate de
-      // chaves falhou e o médico fechou a janela em vez de configurar a chave e tentar de
-      // novo (esses tempdirs agora SOBREVIVEM a essa falha, ver `rodarAprendizado`/I2). Só
-      // varre se não houver um lote em andamento AGORA (`aprendizadoEmExecucao`) — fechar a
-      // janela não cancela a promise do IPC 'aprendizado-rodar' em voo no processo main, e
+      // I6(b): fechar a janela durante a fase "rodando" sinaliza cancelamento ao aprendizado
+      // em andamento — mesmo botão "Cancelar" da própria tela, best-effort (o alvo em voo
+      // termina; nenhum alvo NOVO começa depois). Ao contrário da importação de acervo (I6a,
+      // sem cancelamento — texto corrigido em vez de fingir um cancelamento que não existe),
+      // aprendizado JÁ tem um mecanismo de cancelamento pronto (`cancelarAprendizado`); só
+      // faltava disparar no fechar da janela.
+      cancelarAprendizado();
+      // I2(b): também varre tempdirs órfãos do corpus do histórico (Reaprender) que não
+      // chegaram a ser lidos por `rodarAprendizado` — ex.: o gate de chaves falhou e o médico
+      // fechou a janela em vez de configurar a chave e tentar de novo (esses tempdirs agora
+      // SOBREVIVEM a essa falha, ver `rodarAprendizado`/I2). Só varre se não houver um lote em
+      // andamento AGORA (`aprendizadoEmExecucao`) — fechar a janela não cancela de fato a
+      // promise do IPC 'aprendizado-rodar' já em voo no processo main (só sinaliza, acima), e
       // varrer no meio de uma execução real apagaria um tempdir que ainda está sendo lido.
       if (!aprendizadoEmExecucao()) limparCorpusHistoricoOrfao();
     },
@@ -299,11 +306,20 @@ function estado(fase: string, msg?: string): void {
 
 // Progresso de acervo/aprendizado (Bloco 3): manda a TODAS as janelas vivas,
 // mesmo padrão do canal 'estado' acima (o wizard de importação é quem realmente
-// escuta hoje; as demais só ignoram o evento).
+// escuta hoje; as demais só ignoram o evento). EXCEÇÃO: 'acervo-progresso' (M5,
+// ver `enviarImportarWin` abaixo) — o payload carrega o basename ORIGINAL do
+// arquivo (nome de paciente, ex.: "2026-07-15_..._ISRAEL-ANDRETTA.pdf"), então
+// vai só para a janela de importação, nunca em broadcast geral.
 function broadcast(canal: string, payload: unknown): void {
   for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin, importarWin, estiloWin]) {
     if (w && !w.isDestroyed()) w.webContents.send(canal, payload);
   }
+}
+
+/** M5: envia só para a janela de importação (nunca broadcast geral) — usado por
+ *  'acervo-progresso', cujo payload inclui o nome de arquivo ORIGINAL (pré-sanitização). */
+function enviarImportarWin(canal: string, payload: unknown): void {
+  if (importarWin && !importarWin.isDestroyed()) importarWin.webContents.send(canal, payload);
 }
 
 let ultimoArquivo = '';
@@ -619,7 +635,7 @@ function registrarIpc(): void {
   ipcMain.handle('acervo-importar', (_e, paths: unknown) => {
     const parsed = CaminhosSchema.safeParse(paths);
     if (!parsed.success) throw new Error('lista de arquivos inválida para importação do acervo');
-    return importarAcervo(parsed.data, cfg(), (p) => broadcast('acervo-progresso', p));
+    return importarAcervo(parsed.data, cfg(), (p) => enviarImportarWin('acervo-progresso', p));
   });
 
   // ── Aprendizado (Bloco 3): estimativa sem LLM; execução com gate BYOK ──────

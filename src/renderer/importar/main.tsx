@@ -770,7 +770,12 @@ function App() {
         )}
         {fase === 'processando' && (
           <span className="dica">
-            {erroImportacao ? '' : 'Fechar esta janela cancela a importação (nada é perdido — tente de novo depois).'}
+            {/* I6: `importarAcervo` (main/acervo.ts) não tem cancelamento — fechar esta janela
+                NÃO interrompe a importação em andamento no processo principal; ela continua até
+                o fim e os laudos processados ficam salvos no acervo mesmo assim. */}
+            {erroImportacao
+              ? ''
+              : 'A importação continua em segundo plano mesmo se você fechar esta janela — nada é perdido.'}
           </span>
         )}
         {fase === 'processando' && erroImportacao && (
