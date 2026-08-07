@@ -43,7 +43,7 @@ describe('biblioteca-base', () => {
         .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
         .join('\n');
       const { findings } = sanitize(`${frontmatterComoLinhas}\n${content}`);
-      const graves = findings.filter((f) => ['nome', 'cpf', 'telefone', 'id', 'crm'].includes(f.tipo));
+      const graves = findings.filter((f) => ['nome', 'cpf', 'telefone', 'id', 'crm', 'data'].includes(f.tipo));
       expect(graves, `${a}: ${JSON.stringify(graves)}`).toHaveLength(0);
     }
   });
