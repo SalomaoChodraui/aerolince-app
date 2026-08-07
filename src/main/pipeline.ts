@@ -94,8 +94,8 @@ export function processarTexto(transcript: string): Promise<ResultadoPipeline> {
 }
 
 export async function processarAudio(audio: Buffer): Promise<ResultadoPipeline> {
-  exigirChave('OPENAI_API_KEY');
   const config = getConfig();
+  exigirChaves(config);
   validarAudio(audio.byteLength);
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   const r = await stt.transcribeBuffer(audio, 'ditado.webm');
@@ -157,8 +157,8 @@ export async function processarAudioSegmentado(
   wavs: Buffer[],
   tele: { capturedMs: number; speechMs: number },
 ): Promise<ResultadoPipeline> {
-  exigirChave('OPENAI_API_KEY');
   const config = getConfig();
+  exigirChaves(config);
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   const t = await transcreverConsolidado(stt, wavs, config.stt.model);
   const res = await processarTranscript(t.transcript, t.sttMs);
@@ -349,8 +349,8 @@ export function refinarTexto(command: string): Promise<ResultadoLaudo> {
 }
 
 export async function refinarAudio(audio: Buffer): Promise<ResultadoLaudo> {
-  exigirChave('OPENAI_API_KEY');
   const config = getConfig();
+  exigirChaves(config);
   validarAudio(audio.byteLength);
   const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
   const r = await stt.transcribeBuffer(audio, 'refino.webm');
