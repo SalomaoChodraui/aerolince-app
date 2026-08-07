@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
-import { loadConfig } from '../core/config/schema.js';
+import { loadConfig, type Config } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
 import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
@@ -243,12 +243,16 @@ async function gravar(outPath?: string): Promise<string> {
   return out;
 }
 
-function sanitizedDir(): string {
-  const dir = resolve(APP_ROOT, 'tmp-sanitized');
-  if (!existsSync(dir)) {
-    throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
-  }
-  return dir;
+/**
+ * Diretório de laudos sanitizados: `config.acervoDir` (novo, com frontmatter de
+ * proveniência) se existir e tiver arquivos; senão o `tmp-sanitized` legado se
+ * existir (compat com instalações antigas); senão o erro de sempre.
+ */
+function sanitizedDir(config: Config): string {
+  if (existsSync(config.acervoDir) && readdirSync(config.acervoDir).length > 0) return config.acervoDir;
+  const legado = resolve(APP_ROOT, 'tmp-sanitized');
+  if (existsSync(legado)) return legado;
+  throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
 }
 
 /** Arquivos sanitizados cujo nome começa com algum dos prefixos (mais recentes por último). */
@@ -281,7 +285,7 @@ async function aprender(target: string) {
   const config = loadConfig(APP_ROOT);
   requireEnv(chavesNecessarias(config));
   const masks = loadMasks(config);
-  const sanDir = sanitizedDir();
+  const sanDir = sanitizedDir(config);
   const alvo = target === 'todos' ? masks.filter((m) => m.prefixos.length > 0) : masks.filter((m) => m.id === target);
   if (alvo.length === 0) throw new Error(`nenhuma máscara com prefixos para "${target}"`);
   const { llm, modelos } = criarLLM(config);
@@ -330,7 +334,7 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
   if (!id || prefixos.length === 0) throw new Error('uso: laudo destilar <id-novo> <PREFIXO1> [PREFIXO2…] [--contendo "…"] [--sem "…"]');
   const config = loadConfig(APP_ROOT);
   requireEnv(chavesNecessarias(config));
-  const sanDir = sanitizedDir();
+  const sanDir = sanitizedDir(config);
   const files = corpusFiles(sanDir, prefixos, 40, filtro);
   if (files.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
   const corpus = files

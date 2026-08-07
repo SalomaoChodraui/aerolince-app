@@ -3,7 +3,7 @@ import { ConfigSchema } from '../core/config/schema.js';
 import { exigirChaves } from './pipeline.js';
 
 function cfg(llm: Record<string, unknown>) {
-  return ConfigSchema.parse({ masksDir: '/x', profilesDir: '/x', outputDir: '/x', bibliotecaBaseDir: '/x', stt: {}, llm });
+  return ConfigSchema.parse({ masksDir: '/x', profilesDir: '/x', outputDir: '/x', bibliotecaBaseDir: '/x', acervoDir: '/x', stt: {}, llm });
 }
 
 afterEach(() => {

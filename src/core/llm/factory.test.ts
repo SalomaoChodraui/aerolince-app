@@ -10,6 +10,7 @@ function cfg(llm: Record<string, unknown>) {
     profilesDir: '/x',
     outputDir: '/x',
     bibliotecaBaseDir: '/x',
+    acervoDir: '/x',
     stt: {},
     llm,
   });

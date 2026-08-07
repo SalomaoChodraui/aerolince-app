@@ -13,7 +13,7 @@ function setup() {
   mkdirSync(join(medico, 'regras'), { recursive: true });
   mkdirSync(join(medico, 'frasario'), { recursive: true });
   const config = ConfigSchema.parse({
-    masksDir: medico, bibliotecaBaseDir: base, profilesDir: medico, outputDir: medico, stt: {}, llm: {},
+    masksDir: medico, bibliotecaBaseDir: base, acervoDir: '/x', profilesDir: medico, outputDir: medico, stt: {}, llm: {},
   });
   return { base, medico, config };
 }
