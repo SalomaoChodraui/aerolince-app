@@ -9,6 +9,7 @@ function cfg(llm: Record<string, unknown>) {
     masksDir: '/x',
     profilesDir: '/x',
     outputDir: '/x',
+    bibliotecaBaseDir: '/x',
     stt: {},
     llm,
   });

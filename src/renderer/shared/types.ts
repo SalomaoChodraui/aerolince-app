@@ -35,6 +35,7 @@ export interface RendererConfig {
   masksDir: string;
   profilesDir: string;
   outputDir: string;
+  bibliotecaBaseDir: string;
   perfilPadrao: string;
   onboardingConcluido: boolean;
   ui: UIConfig;

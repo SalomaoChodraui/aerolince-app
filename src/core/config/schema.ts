@@ -16,6 +16,7 @@ export const ConfigSchema = z.object({
   masksDir: z.string(),
   profilesDir: z.string(),
   outputDir: z.string(),
+  bibliotecaBaseDir: z.string(),
   perfilPadrao: z.string().default('padrao'),
   onboardingConcluido: z.boolean().default(false),
   ui: z
@@ -100,6 +101,7 @@ function defaultsDe(appRoot: string) {
     masksDir: resolve(appRoot, '..', 'biblioteca-mascaras'),
     profilesDir: resolve(appRoot, 'perfis'),
     outputDir: resolve(appRoot, '..', 'Laudos Gerados'),
+    bibliotecaBaseDir: resolve(appRoot, 'biblioteca-base'),
     stt: { model: 'gpt-4o-transcribe', glossario: GLOSSARIO_PADRAO },
     llm: {
       kimiModel: 'kimi-k2-0905-preview',

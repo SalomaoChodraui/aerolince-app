@@ -8,7 +8,7 @@ export const MaskFrontmatterSchema = z.object({
   sinonimos: z.array(z.string()).default([]),
   contraste: z.enum(['sem', 'com', 'opcional']).default('sem'),
   versao: z.number().default(1),
-  origem: z.enum(['importado-pdf', 'consenso', 'manual']).default('manual'),
+  origem: z.enum(['importado-pdf', 'consenso', 'manual', 'base']).default('manual'),
   /** Prefixos dos arquivos do acervo que alimentam esta máscara (aprender/destilar). */
   prefixos: z.array(z.string()).default([]),
   /** Filtros de conteúdo do corpus do `aprender` (ex.: separar com/sem contraste). */
