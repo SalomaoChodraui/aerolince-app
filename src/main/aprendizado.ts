@@ -22,6 +22,7 @@ import { aprenderRegras } from '../core/aprendizado/aprender.js';
 import { corpusPorArquivos, corpusPorPrefixos, montarCorpus } from '../core/aprendizado/corpus.js';
 import { estimarCustoAprendizado } from '../core/aprendizado/custo.js';
 import { destilarMascara } from '../core/aprendizado/destilar.js';
+import { destilarSintese } from '../core/aprendizado/sintese.js';
 import type { Config } from '../core/config/schema.js';
 import { criarLLM, modelosDe } from '../core/llm/factory.js';
 import { bibliotecasDe, loadLibrary } from '../core/masks/library.js';
@@ -30,21 +31,24 @@ import { amostraAleatoria } from './acervo.js';
 import { exigirChaves } from './pipeline.js';
 
 export interface AlvoAprendizado {
-  tipo: 'destilar' | 'aprender';
+  tipo: 'destilar' | 'aprender' | 'sintetizar';
   /** Chave do cluster do acervo (identifica o alvo para o wizard/progresso — não é usada em caminho de arquivo). */
   chave: string;
-  /** Id da máscara: existente (aprender) ou nova (destilar). */
+  /** Id da máscara: existente (aprender/sintetizar) ou nova (destilar). */
   maskId: string;
   arquivos: string[];
 }
 
-// Espelha o `maxTokens` usado internamente por destilarMascara/aprenderRegras
-// (core/aprendizado/{destilar,aprender}.ts) — mantenha em sincronia se mudar lá.
+// Espelha o `maxTokens` usado internamente por destilarMascara/aprenderRegras/destilarSintese
+// (core/aprendizado/{destilar,aprender,sintese}.ts) — mantenha em sincronia se mudar lá.
 const MAX_TOKENS_DESTILAR = 2500;
 const MAX_TOKENS_APRENDER = 4000;
+const MAX_TOKENS_SINTETIZAR = 3000;
 
 function maxTokensDe(tipo: AlvoAprendizado['tipo']): number {
-  return tipo === 'destilar' ? MAX_TOKENS_DESTILAR : MAX_TOKENS_APRENDER;
+  if (tipo === 'destilar') return MAX_TOKENS_DESTILAR;
+  if (tipo === 'sintetizar') return MAX_TOKENS_SINTETIZAR;
+  return MAX_TOKENS_APRENDER;
 }
 
 // Cap de laudos por alvo efetivamente enviados a um LLM — mesmo valor usado pelo `laudo
@@ -182,7 +186,9 @@ export async function rodarAprendizado(
               // vazio e `montarAlvosReaprender`/o `laudo aprender` da CLI nunca achavam este
               // cluster de novo pelo acervo (C1).
               await destilarMascara({ id: alvo.maskId, arquivos, masksDir: config.masksDir, prefixos: [alvo.maskId] }, opts)
-            : await aprenderRegras({ maskId: alvo.maskId, arquivos, masksDir: config.masksDir }, opts);
+            : alvo.tipo === 'sintetizar'
+              ? await destilarSintese({ maskId: alvo.maskId, arquivos, masksDir: config.masksDir }, opts)
+              : await aprenderRegras({ maskId: alvo.maskId, arquivos, masksDir: config.masksDir }, opts);
         ok.push({ chave: alvo.chave, arquivo: r.arquivo, custoUSD: r.custoUSD ?? 0 });
       } catch (err) {
         falhas.push({ chave: alvo.chave, erro: err instanceof Error ? err.message : String(err) });
@@ -472,10 +478,11 @@ export interface ResumoReaprender {
  *
  * O histórico entra no FIM da lista — como o cap de `corpusPorArquivos` corta
  * pelo INÍCIO (`slice(-cap)`), a edição do médico tem prioridade sobre o
- * acervo mais antigo quando o total excede o cap (peso de recência). Só gera
- * alvos `'aprender'` (fraseado de máscaras já existentes) — "Reaprender"
- * refina o estilo, não descobre máscaras novas (isso é o wizard normal de
- * importação). Sem chamada de LLM.
+ * acervo mais antigo quando o total excede o cap (peso de recência). Gera
+ * alvos `'aprender'` (fraseado) e `'sintetizar'` (pares de síntese da
+ * conclusão) de máscaras já existentes — "Reaprender" refina o estilo, não
+ * descobre máscaras novas (isso é o wizard normal de importação). Sem chamada
+ * de LLM.
  *
  * `semArquivos` só lista máscaras com `prefixos` EXPLICITAMENTE configurados
  * (sinal de que o médico esperava aprendizado ali) e mesmo assim sem nenhum
@@ -518,9 +525,15 @@ export function montarAlvosReaprender(config: Config, capHistorico = 40): Resumo
     // total ultrapassa o cap — peso de recência de fato, não só na ordem.
     const arquivos = corpusPorArquivos([...doAcervo, ...doHistorico], CAP_POR_MASCARA);
     alvos.push({ tipo: 'aprender', chave: m.id, maskId: m.id, arquivos });
+    // Toda máscara com corpus também ganha um alvo de SÍNTESE da conclusão (pares
+    // corpo → conclusão, `destilarSintese`) — mesmo corpus, chave própria para o
+    // progresso do wizard não colidir com o alvo 'aprender' da mesma máscara.
+    alvos.push({ tipo: 'sintetizar', chave: `sintese:${m.id}`, maskId: m.id, arquivos });
   }
   const amostras = amostraAleatoria(
-    alvos.flatMap((a) => a.arquivos),
+    // Só os alvos 'aprender' — os 'sintetizar' apontam para os MESMOS arquivos e
+    // duplicariam candidatos na amostragem sem acrescentar corpus novo.
+    alvos.filter((a) => a.tipo === 'aprender').flatMap((a) => a.arquivos),
     3,
   ).map((arquivo) => ({ arquivo: basename(arquivo), texto: corpoDoArquivo(arquivo) }));
   return { alvos, semArquivos, temHistorico, amostras };

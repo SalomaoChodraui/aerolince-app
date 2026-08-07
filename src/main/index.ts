@@ -454,7 +454,7 @@ async function confirmarDestrutivo(message: string, acao: string): Promise<boole
 // ── Validação zod das fronteiras IPC de acervo/aprendizado/estilo (Bloco 3) ──
 const CaminhosSchema = z.array(z.string().min(1)).min(1);
 const AlvoAprendizadoSchema = z.object({
-  tipo: z.enum(['destilar', 'aprender']),
+  tipo: z.enum(['destilar', 'aprender', 'sintetizar']),
   chave: z.string().min(1),
   // mesma regra do id de máscara (MaskFrontmatterSchema) — vira nome de arquivo no core, sem barra/ponto.
   maskId: z.string().regex(/^[a-z0-9-]+$/, 'maskId deve ser kebab-case'),

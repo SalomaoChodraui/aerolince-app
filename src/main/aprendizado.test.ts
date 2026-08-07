@@ -144,7 +144,7 @@ describe('montarAlvosReaprender', () => {
     const r = montarAlvosReaprender(c);
 
     expect(r.semArquivos).toEqual([]);
-    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos).toHaveLength(2); // 'aprender' + 'sintetizar' da mesma máscara
     const alvo = r.alvos[0]!;
     expect(alvo).toMatchObject({ tipo: 'aprender', maskId: 'torax-tc' });
     expect(alvo.arquivos).toHaveLength(2);
@@ -158,6 +158,20 @@ describe('montarAlvosReaprender', () => {
     expect(r.amostras[0]!.texto.length).toBeGreaterThan(0);
   });
 
+  it("toda máscara com corpus ganha também um alvo 'sintetizar' (mesmos arquivos, chave própria)", () => {
+    writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', ['torax-tc']), 'utf8');
+    writeFileSync(join(acervoDir, 'torax-tc_2026-01-01_001.md'), 'laudo do acervo', 'utf8');
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    const r = montarAlvosReaprender(c);
+
+    expect(r.alvos.map((a) => a.tipo)).toEqual(['aprender', 'sintetizar']);
+    const [aprender, sintetizar] = r.alvos;
+    expect(sintetizar).toMatchObject({ tipo: 'sintetizar', maskId: 'torax-tc', chave: 'sintese:torax-tc' });
+    expect(sintetizar!.arquivos).toEqual(aprender!.arquivos); // mesmo corpus, mesmo casamento [id, ...prefixos]
+    expect(sintetizar!.chave).not.toBe(aprender!.chave); // progresso do wizard não colide
+  });
+
   it('I3: temHistorico é false quando só há acervo (nenhuma edição no histórico) — consentimento já dado na importação original', () => {
     writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', ['torax-tc']), 'utf8');
     writeFileSync(join(acervoDir, 'torax-tc_2026-01-01_001.md'), 'laudo do acervo', 'utf8');
@@ -165,7 +179,7 @@ describe('montarAlvosReaprender', () => {
 
     const r = montarAlvosReaprender(c);
 
-    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos).toHaveLength(2); // aprender + sintetizar
     expect(r.temHistorico).toBe(false);
   });
 
@@ -218,7 +232,7 @@ describe('montarAlvosReaprender', () => {
     const r = montarAlvosReaprender(c);
 
     expect(r.semArquivos).toEqual([]);
-    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos).toHaveLength(2); // aprender + sintetizar
     expect(r.alvos[0]).toMatchObject({ tipo: 'aprender', maskId: 'abdome-tc' });
     expect(r.alvos[0]!.arquivos).toEqual([
       join(acervoDir, 'abdome-tc_2026-01-01_001.md'),
@@ -236,7 +250,7 @@ describe('montarAlvosReaprender', () => {
     const r = montarAlvosReaprender(c);
 
     expect(r.semArquivos).toEqual([]);
-    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos).toHaveLength(2); // aprender + sintetizar
     expect(r.alvos[0]).toMatchObject({ tipo: 'aprender', maskId: 'torax-tc' });
     expect(r.alvos[0]!.arquivos).toHaveLength(1);
   });
@@ -248,7 +262,7 @@ describe('montarAlvosReaprender', () => {
 
     const r = montarAlvosReaprender(c);
 
-    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos).toHaveLength(2); // aprender + sintetizar
     expect(r.alvos[0]!.arquivos).toHaveLength(1);
   });
 });
@@ -379,6 +393,67 @@ describe('rodarAprendizado — alvo "destilar" grava prefixos (C1)', () => {
   });
 });
 
+describe("alvo 'sintetizar' — estimado e executado como os demais", () => {
+  let masksDir: string;
+  let baseDir: string;
+  let acervoDir: string;
+  let outputDir: string;
+  let corpusDir: string;
+
+  beforeEach(() => {
+    masksDir = mkdtempSync(join(tmpdir(), 'aerolince-sintetizar-medico-'));
+    baseDir = mkdtempSync(join(tmpdir(), 'aerolince-sintetizar-base-'));
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-sintetizar-acervo-'));
+    outputDir = mkdtempSync(join(tmpdir(), 'aerolince-sintetizar-output-'));
+    corpusDir = mkdtempSync(join(tmpdir(), 'aerolince-sintetizar-corpus-'));
+    vi.stubEnv('OPENAI_API_KEY', 'sk-fake');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-fake');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    for (const d of [masksDir, baseDir, acervoDir, outputDir, corpusDir]) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('estimarAprendizado estima um alvo sintetizar (sem LLM, custo conhecido)', () => {
+    const arquivo = join(corpusDir, 'tc-abdome-total_2026-01-01_001.md');
+    writeFileSync(arquivo, 'Ateromatose aórtica.', 'utf8');
+    const config = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+    const alvo: AlvoAprendizado = { tipo: 'sintetizar', chave: 'sintese:tc-abdome-total', maskId: 'tc-abdome-total', arquivos: [arquivo] };
+
+    const r = estimarAprendizado([alvo], config);
+
+    expect(r.porAlvo).toEqual([{ chave: 'sintese:tc-abdome-total', custoAproxUSD: expect.any(Number) }]);
+    expect(r.totalUSD).not.toBeNull();
+  });
+
+  it('rodarAprendizado executa destilarSintese: grava _rascunhos/sintese-<maskId>.md com o corpus no user', async () => {
+    const arquivo = join(corpusDir, 'tc-abdome-total_2026-01-01_001.md');
+    writeFileSync(arquivo, 'Aorta de paredes irregulares, com placas ateromatosas calcificadas.', 'utf8');
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    let userRecebidoPeloLlm = '';
+    llmFake.handler = async (params) => {
+      userRecebidoPeloLlm = params.user;
+      return {
+        text: '## Síntese da conclusão — tc-abdome-total\n\n- corpo: Aorta de paredes irregulares…\n  conclusão: Ateromatose aórtica.',
+        usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      };
+    };
+
+    const alvo: AlvoAprendizado = { tipo: 'sintetizar', chave: 'sintese:tc-abdome-total', maskId: 'tc-abdome-total', arquivos: [arquivo] };
+    const r = await rodarAprendizado([alvo], c);
+
+    expect(r.falhas).toEqual([]);
+    expect(r.ok).toHaveLength(1);
+    expect(r.ok[0]!.arquivo).toBe(join(masksDir, '_rascunhos', 'sintese-tc-abdome-total.md'));
+    expect(existsSync(r.ok[0]!.arquivo)).toBe(true);
+    expect(readFileSync(r.ok[0]!.arquivo, 'utf8')).toContain('- corpo:');
+    expect(userRecebidoPeloLlm).toContain('Tipo de exame: tc-abdome-total');
+    expect(userRecebidoPeloLlm).toContain('─── LAUDO 1 ───');
+  });
+});
+
 describe('rodarAprendizado — higiene de privacidade: limpeza do corpus temporário do histórico', () => {
   let masksDir: string;
   let baseDir: string;
@@ -437,7 +512,7 @@ describe('rodarAprendizado — higiene de privacidade: limpeza do corpus tempor�
 
     const r = await rodarAprendizado(alvos, c);
 
-    expect(r.falhas).toHaveLength(1);
+    expect(r.falhas).toHaveLength(2); // aprender + sintetizar da mesma máscara, ambos com LLM indisponível
     expect(existsSync(tempDir)).toBe(false);
   });
 
@@ -476,7 +551,7 @@ describe('rodarAprendizado — higiene de privacidade: limpeza do corpus tempor�
     const r = await rodarAprendizado(alvos, c); // MESMO array `alvos` — sem remontar o plano
 
     expect(r.falhas).toEqual([]);
-    expect(r.ok).toHaveLength(1);
+    expect(r.ok).toHaveLength(2); // aprender + sintetizar
     expect(existsSync(tempDir)).toBe(false); // limpo depois que o retry, agora, terminou de verdade
   });
 
@@ -489,9 +564,9 @@ describe('rodarAprendizado — higiene de privacidade: limpeza do corpus tempor�
     criarLaudo(outputDir, '2026-02-02_1000_torax-tc', { maskId: 'torax-tc', laudoFinalEditado: 'edição 2' });
     const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
     const { alvos } = montarAlvosReaprender(c);
-    expect(alvos.map((a) => a.maskId)).toEqual(['abdome-tc', 'torax-tc']);
+    expect(alvos.map((a) => a.maskId)).toEqual(['abdome-tc', 'abdome-tc', 'torax-tc', 'torax-tc']); // aprender + sintetizar de cada
     const tempDir = dirname(alvos[0]!.arquivos[0]!);
-    expect(dirname(alvos[1]!.arquivos[0]!)).toBe(tempDir); // os dois compartilham o mesmo tempdir
+    expect(dirname(alvos[2]!.arquivos[0]!)).toBe(tempDir); // as duas máscaras compartilham o mesmo tempdir
 
     llmFake.handler = async () => {
       cancelarAprendizado(); // simula o médico clicando "Cancelar" enquanto o 1º alvo roda

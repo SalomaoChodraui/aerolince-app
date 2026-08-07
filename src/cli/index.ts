@@ -330,7 +330,9 @@ function mostrarRascunhos() {
     return;
   }
   console.log(
-    rascunhos.map((r) => `${r.arquivo}  [${r.tipo === 'mascara' ? 'máscara' : 'regras'} → ${r.alvo}]`).join('\n'),
+    rascunhos
+      .map((r) => `${r.arquivo}  [${r.tipo === 'mascara' ? 'máscara' : r.tipo === 'sintese' ? 'síntese' : 'regras'} → ${r.alvo}]`)
+      .join('\n'),
   );
   console.log('\nlaudo aplicar <arquivo>   — promove para a biblioteca (com backup .bak se já existir)');
   console.log('laudo descartar <arquivo> — apaga o rascunho sem aplicar');

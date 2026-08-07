@@ -38,10 +38,10 @@ type ResumoImportacao = {
   suspeitos: number;
   duplicados: number;
 };
-type AlvoAprendizado = { tipo: 'destilar' | 'aprender'; chave: string; maskId: string; arquivos: string[] };
+type AlvoAprendizado = { tipo: 'destilar' | 'aprender' | 'sintetizar'; chave: string; maskId: string; arquivos: string[] };
 type ProgressoAcervo = { fase: 'extraindo' | 'classificando' | 'sanitizando'; atual: number; total: number; arquivo?: string };
 type ProgressoAprendizado = { chave: string; etapa: string; atual: number; total: number };
-type Rascunho = { arquivo: string; tipo: 'mascara' | 'regras'; alvo: string };
+type Rascunho = { arquivo: string; tipo: 'mascara' | 'regras' | 'sintese'; alvo: string };
 type ItemEstiloMascara = { id: string; nome: string; origemEfetiva: 'base' | 'minha' };
 type ItemEstilo = { nome: string; origemEfetiva: 'base' | 'minha' };
 type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: ItemEstilo[]; frasario: ItemEstilo[] };

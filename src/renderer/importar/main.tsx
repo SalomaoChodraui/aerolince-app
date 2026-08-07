@@ -91,6 +91,13 @@ function rotuloCluster(c: ClusterImportacao): string {
   return `${rotuloModalidade(c.modalidade)} ${rotuloExame(c.exame)}${contraste}`;
 }
 
+/** Rótulo do tipo de alvo nas telas de custo e execução. */
+function rotuloTipoAlvo(tipo: AlvoAprendizado['tipo']): string {
+  if (tipo === 'destilar') return 'Criar máscara';
+  if (tipo === 'sintetizar') return 'Aprender síntese da conclusão';
+  return 'Aprender fraseado';
+}
+
 function rotuloFaseAcervo(f: ProgressoAcervo['fase']): string {
   const nomes: Record<ProgressoAcervo['fase'], string> = {
     extraindo: 'Extraindo texto…',
@@ -111,7 +118,9 @@ function rotuloFaseAcervo(f: ProgressoAcervo['fase']): string {
  * - o resto (não-reconhecido sem destino escolhido, ou reconhecido com poucos
  *   laudos) fica de fora, listado com o motivo.
  * Alvos 'aprender' que mirem a MESMA máscara são fundidos num só — nunca dois
- * 'aprender' escrevendo por cima do mesmo rascunho.
+ * 'aprender' escrevendo por cima do mesmo rascunho. Cada máscara com corpus
+ * ganha também um alvo 'sintetizar' (pares de síntese da conclusão), espelho
+ * do 'aprender' correspondente (mesmos arquivos, chave própria).
  */
 function montarPlano(resumo: ResumoImportacao, decisoes: Record<string, string>): Plano {
   const destilar: AlvoPlanejado[] = [];
@@ -154,8 +163,16 @@ function montarPlano(resumo: ResumoImportacao, decisoes: Record<string, string>)
     rotulo: v.rotulos.join(', '),
   }));
 
+  // Espelho 'sintetizar' de cada 'aprender' (mesma máscara, mesmos arquivos): extrai os
+  // pares de síntese da conclusão. Chave prefixada para o progresso não colidir.
+  const sintetizar: AlvoPlanejado[] = aprender.map((a) => ({
+    ...a,
+    tipo: 'sintetizar' as const,
+    chave: `sintese:${a.chave}`,
+  }));
+
   const totalLaudos = aprender.reduce((soma, a) => soma + a.arquivos.length, 0);
-  return { alvos: [...destilar, ...aprender], fora, totalLaudos };
+  return { alvos: [...destilar, ...aprender, ...sintetizar], fora, totalLaudos };
 }
 
 /**
@@ -284,7 +301,8 @@ function App() {
         rotulo: nomePorId.get(s.maskId) ?? s.nome,
         motivo: 'sem laudos no acervo nem no histórico editado ainda',
       }));
-      const totalLaudos = alvos.reduce((soma, a) => soma + a.arquivos.length, 0);
+      // Só os 'aprender' — os 'sintetizar' espelham os MESMOS arquivos e dobrariam a contagem.
+      const totalLaudos = alvos.filter((a) => a.tipo === 'aprender').reduce((soma, a) => soma + a.arquivos.length, 0);
       const p: Plano = { alvos, fora, totalLaudos };
       setPlano(p);
       // I3: só exige o passo de consentimento quando o corpus de fato inclui histórico editado
@@ -664,7 +682,7 @@ function App() {
                     <div className="linha imp-alvo" key={`${a.tipo}-${a.maskId}-${i}`}>
                       <div>
                         <div className="imp-alvo-rot">
-                          {a.tipo === 'destilar' ? 'Criar máscara' : 'Aprender fraseado'}: {a.maskId}
+                          {rotuloTipoAlvo(a.tipo)}: {a.maskId}
                         </div>
                         <div className="imp-alvo-sub">
                           {a.rotulo} · {a.arquivos.length} laudo(s)
@@ -720,7 +738,7 @@ function App() {
                 <div className="linha imp-alvo" key={`${a.tipo}-${a.maskId}-${i}`}>
                   <div style={{ width: '100%' }}>
                     <div className="imp-alvo-rot">
-                      {a.tipo === 'destilar' ? 'Criar máscara' : 'Aprender fraseado'}: {a.maskId}
+                      {rotuloTipoAlvo(a.tipo)}: {a.maskId}
                     </div>
                     <div className="imp-alvo-sub">{status}</div>
                     {/* Barra POR ALVO (em vez de um "alvo K de N" global): o aprendizado roda
@@ -771,7 +789,7 @@ function App() {
                 <div className="imp-rascunho" key={r.arquivo}>
                   <div className="imp-rascunho-cab">
                     <div className="imp-rascunho-rot">
-                      {r.tipo === 'mascara' ? 'Máscara' : 'Regras'}: {r.alvo}
+                      {r.tipo === 'mascara' ? 'Máscara' : r.tipo === 'sintese' ? 'Síntese da conclusão' : 'Regras'}: {r.alvo}
                     </div>
                     <div className="imp-rascunho-botoes">
                       <button onClick={() => alternarPreview(r.arquivo)}>
