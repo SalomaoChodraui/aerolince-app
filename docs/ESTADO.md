@@ -1,19 +1,22 @@
 # Estado do projeto — ponto de retomada
 
-_Atualizado em 20/07/2026, após o merge do áudio segmentado + ajustes de UX. Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
+_Atualizado em 07/08/2026, após a verificação final do Bloco 2 (biblioteca base em camadas). Este é o arquivo para ler primeiro ao retomar o desenvolvimento._
 
 ## ⏩ Comece por aqui
 
 1. **Bloco 1 do reposicionamento (spec 2026-08-07) mergeado** — BYOK com motor selecionável
    (anthropic|openai), factory `criarLLM`, gate `chavesNecessarias`, `ChavesApi` compartilhado,
    onboarding bloqueante (spec e plano em `docs/superpowers/specs/2026-08-07-inteligencia-do-medico-byok-design.md`
-   e `docs/superpowers/plans/2026-08-07-bloco1-byok-provedores.md`). Próximos blocos do mesmo
-   reposicionamento: **Bloco 2** (biblioteca base embarcada em camadas) e **Bloco 3** (ingestão
-   de acervo + aprendizado in-app) — planos ainda por escrever.
-2. **Próxima frente: Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02
-   (patch JSON estruturado), QA-01 (golden set clínico) — fazer plano SDD próprio (decisão de
-   20/07; definições em `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
-3. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
+   e `docs/superpowers/plans/2026-08-07-bloco1-byok-provedores.md`).
+2. **Bloco 2 (biblioteca base embarcada em camadas) concluído em 07/08/2026** na branch
+   `bloco2-biblioteca-base` (e419aa3, 8 tasks aprovadas + verificação final; plano em
+   `docs/superpowers/plans/2026-08-07-bloco2-biblioteca-base.md`) — pendente smoke manual e
+   decisão de merge. Ver "O que foi construído em 07/08 (Bloco 2)" abaixo.
+3. **Próxima frente: Bloco 3** (ingestão de acervo + aprendizado in-app) — plano ainda por
+   escrever. Em paralelo segue pendente a **Fase B da auditoria** — STATE-01 (`ReportSession`
+   canônica), SAFE-02 (patch JSON estruturado), QA-01 (golden set clínico) — plano SDD próprio
+   (decisão de 20/07; definições em `docs/AUDITORIA-TECNICA-PRODUTO-2026-07-18.md`, P0-03/04/05).
+4. **Gate de campo continua pendente**: colar no RIS real da clínica + plantão inteiro de TC +
    **validar o ditado segmentado com fala real** (itens novos em "Pendências de teste").
 
 ## O que o produto faz (funcionando)
@@ -43,7 +46,7 @@ npm run eval                  # golden set (13 casos) — acurácia de seleção
 npm run dev                   # app em dev (hot reload)
 npm run build:app             # compila renderer/main/preload
 npm run dist                  # gera instaladores (DMG + NSIS) em release/
-npm test                      # 149 testes (vitest)
+npm test                      # 178 testes (vitest)
 npm run typecheck
 
 # Curadoria da biblioteca (rodar quando entrarem laudos novos no acervo):
@@ -141,6 +144,41 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
   apontava para cópia com 1 máscara-exemplo → "não tive certeza" sempre; config do app
   instalado agora aponta para a biblioteca real).
 
+## O que foi construído em 07/08 (Bloco 2 — biblioteca base em camadas)
+
+Executado via subagentes por task + review por task (B2-T1..T8, ledger em `.superpowers/sdd/progress.md`,
+plano em `docs/superpowers/plans/2026-08-07-bloco2-biblioteca-base.md`), branch `bloco2-biblioteca-base`
+(base 2750f77 → e419aa3):
+
+- **`app/biblioteca-base/`**: 18 máscaras TC genéricas (mesmos ids da biblioteca real, fraseado
+  neutro de laudário clássico, zero cópia literal) + `regras/gerais.md` (guardas clínicas
+  universais, sem preferência pessoal) + frasário compactado + `LEIA-ME.md`. Teste automático de
+  privacidade (`biblioteca-base.test.ts`) garante zero achado grave (nome/CPF/telefone/CRM) nos
+  arquivos da base.
+- **Camadas em `loadLibrary`/`loadRegras`**: `loadLibrary(dirs: string | string[])` aceita N
+  diretórios em precedência crescente — máscara de mesmo id na camada do médico substitui a da
+  base; camada ausente/vazia não derruba; zero máscaras no total lança erro. `loadRegras`
+  resolve regras POR ARQUIVO (médico vence) e frasário por UNIÃO com dedup por conteúdo (mesmo
+  nome de arquivo ou mesmo prompt já presente na biblioteca do médico não duplica).
+- **Config `bibliotecaBaseDir`**: novo campo (default `app/biblioteca-base` em dev/CLI,
+  `resourcesPath/biblioteca-base` no empacotado). `origem: 'base'` no schema de máscara.
+- **Bootstrap novo + self-heal**: instalação limpa (empacotado, sem config) nasce com
+  `userData/biblioteca-medico/` vazio (sem `masks-exemplo`) e `bibliotecaBaseDir` apontando pro
+  resources da versão instalada. Instalação existente: self-heal realinha só o
+  `bibliotecaBaseDir` (caminho de resources muda a cada versão) sem tocar `masksDir` do médico.
+- **Settings**: linha read-only "Biblioteca base (do app)" nova; rótulos existentes distinguem
+  base × "Minha biblioteca (aprendida)".
+- Suíte: 165 → **178 testes**. Gates (typecheck/build) verdes em todo commit.
+
+**Verificação final (Task 8, 07/08/2026):** `npm test` (178/178) + `npm run typecheck` +
+`npm run build:app` verdes. `npm run eval` NÃO rodado — `.env` só tem placeholders vazios de
+`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`MOONSHOT_API_KEY` (sem chave real nesta máquina agora);
+fica para o smoke com o usuário. Sanidade de camadas confirmada na prática: (a) config real
+(`masksDir` → biblioteca do Paulinho) → `laudo masks` lista as 18 máscaras do médico, **zero**
+`(base)`; (b) cwd temporário com config isolado (`masksDir` vazio, `bibliotecaBaseDir` →
+`app/biblioteca-base` absoluto, `laudo.config.json` real intocado) → `laudo masks` lista as
+mesmas 18, todas com `(base)`.
+
 ## Pendências de teste (o médico precisa validar)
 
 - [x] Recolocar chaves na tela de Configurações e gerar um laudo (20/07, com botão Testar)
@@ -168,9 +206,20 @@ review final adversarial (24 commits; plano em `docs/superpowers/plans/2026-07-2
       as descrições; (b) onboarding via "Guia rápido" com gate de chaves — Continuar/concluir
       desabilitados sem chave válida, dots redirecionam para o passo de chaves; (c) ditado real
       gera laudo no motor padrão; (d) modo "Só OpenAI" gera laudo com uma chave só.
+- [ ] **Smoke manual do Bloco 2 (biblioteca base)** — gates automatizados (test/typecheck/build)
+      + sanidade de camadas por CLI passaram 07/08 (ver seção acima); falta: (a) instalação limpa
+      via DMG mostra as 18 máscaras da base logo no primeiro uso (sem `masksDir` do médico
+      configurado); (b) instalação existente do Paulinho permanece intocada após o self-heal —
+      `masksDir` não muda, só `bibliotecaBaseDir` realinha para o resources da versão nova.
+      Nota: instalação nova (empacotada) usa `userData/biblioteca-medico` como `masksDir`
+      inicial (vazio); dev/CLI usa `../biblioteca-mascaras` — caminhos diferentes por design
+      (isolamento por usuário vs biblioteca de desenvolvimento compartilhada).
 
 ## Backlog priorizado (próximas frentes)
 
+-1. **Bloco 3 (ingestão de acervo + aprendizado in-app)** — próxima frente do reposicionamento
+   após o Bloco 2 (07/08); plano ainda por escrever. Absorve/relaciona os itens 1 e 2 abaixo
+   (loop de feedback virando ajuste de regras; wizard de importação de PDFs dentro do app).
 0. **Fase B da auditoria** — STATE-01 (`ReportSession` canônica), SAFE-02 (patch JSON
    estruturado), QA-01 (golden set clínico reprodutível). Plano SDD próprio (decisão de 20/07).
 0b. **Dívida técnica triada no review final do áudio** (pequena, entra quando tocar os arquivos):
