@@ -45,6 +45,36 @@ export interface ResumoImportacao {
 }
 
 /**
+ * Expande cada entrada que for uma PASTA para os arquivos aceitos (pdf/docx/txt)
+ * diretamente dentro dela — 1 nível, sem recursão em subpastas; caminhos que já
+ * são arquivo passam direto, SEM checar extensão aqui (quem decide o que fazer
+ * com formato não suportado é `extrairTexto`, que conta e reporta em `semTexto`
+ * em vez de descartar em silêncio). Caminhos inexistentes são ignorados.
+ *
+ * Usada tanto pelo diálogo nativo (`escolherArquivosAcervo`, que filtra o
+ * próprio diálogo por extensão) quanto por `importarAcervo` — este último
+ * também recebe os caminhos soltos por ARRASTE no wizard, que podem incluir
+ * uma pasta inteira (o filtro do `onDrop` no renderer só descarta o óbvio,
+ * extensão claramente errada; não sabe distinguir pasta de arquivo sem tocar
+ * o disco — essa distinção só é possível aqui, no processo principal).
+ */
+function expandirPastas(paths: string[]): string[] {
+  const arquivos: string[] = [];
+  for (const p of paths) {
+    if (!existsSync(p)) continue;
+    if (statSync(p).isDirectory()) {
+      for (const f of readdirSync(p)) {
+        const caminho = join(p, f);
+        if (EXTENSOES_ACEITAS.has(extname(f).toLowerCase()) && statSync(caminho).isFile()) arquivos.push(caminho);
+      }
+    } else {
+      arquivos.push(p);
+    }
+  }
+  return arquivos;
+}
+
+/**
  * Abre o diálogo nativo para escolher arquivos OU uma pasta (openFile +
  * multiSelections + openDirectory), filtrando pdf/docx/txt. Uma pasta
  * escolhida expande 1 nível (só os arquivos diretamente dentro dela — sem
@@ -57,18 +87,7 @@ export async function escolherArquivosAcervo(): Promise<string[] | null> {
   });
   if (r.canceled || r.filePaths.length === 0) return null;
 
-  const arquivos: string[] = [];
-  for (const p of r.filePaths) {
-    if (!existsSync(p)) continue;
-    if (statSync(p).isDirectory()) {
-      for (const f of readdirSync(p)) {
-        const caminho = join(p, f);
-        if (EXTENSOES_ACEITAS.has(extname(f).toLowerCase()) && statSync(caminho).isFile()) arquivos.push(caminho);
-      }
-    } else if (EXTENSOES_ACEITAS.has(extname(p).toLowerCase())) {
-      arquivos.push(p);
-    }
-  }
+  const arquivos = expandirPastas(r.filePaths).filter((p) => EXTENSOES_ACEITAS.has(extname(p).toLowerCase()));
   return arquivos.length > 0 ? arquivos : null;
 }
 
@@ -127,18 +146,24 @@ export function amostraAleatoria<T>(itens: T[], n: number): T[] {
  * chave) com os ids já carregados pela biblioteca (base+médico) — é o sinal
  * que o wizard usa para oferecer "aprender" (máscara já existe) vs "destilar"
  * (máscara nova).
+ *
+ * `paths` pode incluir PASTAS inteiras (o wizard aceita arraste de pasta,
+ * além do diálogo nativo) — `expandirPastas` resolve isso antes de qualquer
+ * outra coisa, mesma regra de 1 nível sem recursão do diálogo.
  */
 export async function importarAcervo(
   paths: string[],
   config: Config,
   onProgresso?: (p: ProgressoAcervo) => void,
 ): Promise<ResumoImportacao> {
+  const arquivosEntrada = expandirPastas(paths);
+
   // Fase 1 — extração de texto (IO; um arquivo por vez, ordem previsível).
   const extraidos: { caminho: string; texto: string }[] = [];
   const semTexto: string[] = [];
-  for (let i = 0; i < paths.length; i++) {
-    const caminho = paths[i]!;
-    onProgresso?.({ fase: 'extraindo', atual: i + 1, total: paths.length, arquivo: basename(caminho) });
+  for (let i = 0; i < arquivosEntrada.length; i++) {
+    const caminho = arquivosEntrada[i]!;
+    onProgresso?.({ fase: 'extraindo', atual: i + 1, total: arquivosEntrada.length, arquivo: basename(caminho) });
     const r = await extrairTexto(caminho);
     if (r.ok) extraidos.push({ caminho, texto: r.texto });
     else semTexto.push(basename(caminho)); // 'sem-texto' | 'formato' | 'erro' — todos entram aqui: nenhum vira acervo

@@ -48,6 +48,22 @@ const TITULOS: Record<Fase, string> = {
 const MIN_LAUDOS_DESTILAR = 20;
 /** Extensões aceitas no arraste — mesmo filtro do diálogo nativo (`acervo.ts`). */
 const EXTENSAO_ACEITA = /\.(pdf|docx|txt)$/i;
+/**
+ * Termina em "ponto + 1-5 caracteres alfanuméricos" — o formato de qualquer
+ * extensão de arquivo real. Um caminho arrastado que NÃO bate aqui não tem
+ * extensão nenhuma, quase sempre porque é uma PASTA (pastas não têm extensão);
+ * esse é o sinal que falta no drop original: uma pasta era descartada em
+ * silêncio por não casar `EXTENSAO_ACEITA`, mesmo o processo principal
+ * (`escolherArquivosAcervo`/`importarAcervo`) já sabendo expandi-la. Um
+ * arquivo de extensão RECONHECIDA MAS ERRADA (ex.: `.jpg`) ainda é descartado
+ * aqui — só passam adiante extensão aceita OU nenhuma extensão.
+ */
+const SEM_EXTENSAO_RECONHECIVEL = /\.[a-z0-9]{1,5}$/i;
+
+/** Percentual arredondado, protegido contra `total` 0 (nunca divide por zero/NaN). */
+function pct(atual: number, total: number): number {
+  return Math.round((atual / Math.max(1, total)) * 100);
+}
 
 interface AlvoPlanejado extends AlvoAprendizado {
   /** Rótulo legível (exame/cluster de origem) para as telas de custo/execução. */
@@ -211,6 +227,9 @@ function App() {
   const [arquivos, setArquivos] = useState<string[]>([]);
   const [arrastando, setArrastando] = useState(false);
   const [rascunhosPendentes, setRascunhosPendentes] = useState(0);
+  // Feedback quando o que foi solto não rendeu nenhum caminho aproveitável (ex.: imagem colada,
+  // ou só arquivos de extensão não suportada) — sem isso o drop falha em silêncio (I-wizard-1).
+  const [erroDrop, setErroDrop] = useState<string | null>(null);
 
   // Passo 2 — processando
   const [progressoAcervo, setProgressoAcervo] = useState<ProgressoAcervo | null>(null);
@@ -314,9 +333,16 @@ function App() {
     const novos: string[] = [];
     for (const file of Array.from(e.dataTransfer.files)) {
       const caminho = api.caminhoDeArquivo(file);
-      if (caminho && EXTENSAO_ACEITA.test(caminho)) novos.push(caminho);
+      // Aceita extensão reconhecida OU nenhuma extensão (provável PASTA — o processo
+      // principal expande e filtra de verdade; aqui só descarta o ÓBVIO, tipo `.jpg`).
+      if (caminho && (EXTENSAO_ACEITA.test(caminho) || !SEM_EXTENSAO_RECONHECIVEL.test(caminho))) novos.push(caminho);
     }
-    if (novos.length > 0) adicionarArquivos(novos);
+    if (novos.length > 0) {
+      setErroDrop(null);
+      adicionarArquivos(novos);
+    } else {
+      setErroDrop('Nenhum arquivo PDF, DOCX ou TXT reconhecido no que você soltou.');
+    }
   }
   async function iniciarProcessamento(): Promise<void> {
     setFase('processando');
@@ -428,6 +454,7 @@ function App() {
     setAmostrasReaprender([]);
     setFase('selecionar');
     setArquivos([]);
+    setErroDrop(null);
     setErroImportacao(null);
     setProgressoAcervo(null);
     setResumo(null);
@@ -484,9 +511,10 @@ function App() {
               onDragLeave={onDragLeave}
               onDrop={onDrop}
             >
-              <div>Arraste seus laudos (PDF, Word ou texto) aqui</div>
+              <div>Arraste seus laudos (PDF, Word ou texto) — arquivos ou uma pasta inteira — aqui</div>
               <button onClick={escolherArquivos}>Escolher arquivos ou pasta…</button>
             </div>
+            {erroDrop && <div className="imp-erro">{erroDrop}</div>}
             {arquivos.length > 0 && (
               <>
                 <div className="desc" style={{ marginBottom: 6 }}>
