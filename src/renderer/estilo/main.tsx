@@ -34,6 +34,7 @@ interface Selecionado {
 const TITULO_TIPO: Record<TipoEstilo, string> = {
   mascara: 'Máscara',
   regras: 'Regras',
+  sintese: 'Síntese da conclusão',
   frasario: 'Frasário',
 };
 
@@ -109,6 +110,9 @@ function App() {
       if (tipo === 'regras') {
         return { ...r, regras: r.regras.map((it) => (it.nome === nome ? { ...it, origemEfetiva: 'minha' as const } : it)) };
       }
+      if (tipo === 'sintese') {
+        return { ...r, sintese: r.sintese.map((it) => (it.nome === nome ? { ...it, origemEfetiva: 'minha' as const } : it)) };
+      }
       return { ...r, frasario: r.frasario.map((it) => (it.nome === nome ? { ...it, origemEfetiva: 'minha' as const } : it)) };
     });
     setSel((s) => (s ? { ...s, origemEfetiva: 'minha' } : s));
@@ -168,6 +172,27 @@ function App() {
                     </li>
                   ))}
                   {resumo.regras.length === 0 && <li className="vazio">Nenhuma regra.</li>}
+                </ul>
+              </div>
+
+              {/* Grupo PRÓPRIO (não misturado com Regras): a "tabela manual" dos pares
+                  corpo → conclusão de cada exame (`regras/sintese-<id>.md`) — formato de
+                  duas linhas por par, propositalmente fácil de editar à mão. */}
+              <div className="estilo-grupo">
+                <h2>Síntese da conclusão</h2>
+                <ul>
+                  {resumo.sintese.map((s) => (
+                    <li
+                      key={s.nome}
+                      className={sel?.tipo === 'sintese' && sel.nome === s.nome ? 'sel' : ''}
+                      onClick={() => void selecionar('sintese', s.nome, s.nome, s.origemEfetiva)}
+                    >
+                      <span className="estilo-nome">{s.nome}</span>
+                    </li>
+                  ))}
+                  {resumo.sintese.length === 0 && (
+                    <li className="vazio">Nenhuma ainda — aparece após "Reaprender com meus laudos".</li>
+                  )}
                 </ul>
               </div>
 

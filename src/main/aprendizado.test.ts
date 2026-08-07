@@ -10,10 +10,12 @@ import {
   cancelarAprendizado,
   corpusDoHistorico,
   estimarAprendizado,
+  lerEstilo,
   limparCorpusHistoricoOrfao,
   listarEstilo,
   montarAlvosReaprender,
   rodarAprendizado,
+  salvarEstilo,
 } from './aprendizado.js';
 
 // `rodarAprendizado` chama `criarLLM(config)` internamente (não é injetável) — para simular o
@@ -651,6 +653,52 @@ describe('listarEstilo — origem de regras/frasário (médico vence a base)', (
       const r = listarEstilo(c);
 
       expect(r.regras).toEqual([{ nome: 'gerais', origemEfetiva: 'minha' }]);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+      rmSync(acervoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("sintese-*.md sai do grupo Regras e entra no grupo próprio 'sintese' (nome sem o prefixo)", () => {
+    const outputDir = mkdtempSync(join(tmpdir(), 'aerolince-estilo-out-'));
+    const acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-estilo-acervo-'));
+    try {
+      mkdirSync(join(baseDir, 'regras'), { recursive: true });
+      mkdirSync(join(masksDir, 'regras'), { recursive: true });
+      writeFileSync(join(baseDir, 'regras', 'gerais.md'), 'regra base', 'utf8');
+      writeFileSync(join(baseDir, 'regras', 'sintese-tc-abdome-total.md'), '- corpo: X\n  conclusão: Y', 'utf8');
+      writeFileSync(join(masksDir, 'regras', 'sintese-tc-torax.md'), '- corpo: A\n  conclusão: B', 'utf8');
+      const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+      const r = listarEstilo(c);
+
+      expect(r.regras).toEqual([{ nome: 'gerais', origemEfetiva: 'base' }]); // sem os sintese-*
+      expect(r.sintese).toEqual([
+        { nome: 'tc-abdome-total', origemEfetiva: 'base' },
+        { nome: 'tc-torax', origemEfetiva: 'minha' },
+      ]);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+      rmSync(acervoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("lerEstilo/salvarEstilo tipo 'sintese': lê a camada efetiva e salva o override em regras/sintese-<id>.md do médico", () => {
+    const outputDir = mkdtempSync(join(tmpdir(), 'aerolince-estilo-out-'));
+    const acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-estilo-acervo-'));
+    try {
+      mkdirSync(join(baseDir, 'regras'), { recursive: true });
+      writeFileSync(join(baseDir, 'regras', 'sintese-tc-abdome-total.md'), 'PARES DA BASE', 'utf8');
+      const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+      expect(lerEstilo(c, 'sintese', 'tc-abdome-total')).toBe('PARES DA BASE');
+
+      salvarEstilo(c, 'sintese', 'tc-abdome-total', 'PARES EDITADOS PELO MÉDICO');
+
+      expect(readFileSync(join(masksDir, 'regras', 'sintese-tc-abdome-total.md'), 'utf8')).toBe(
+        'PARES EDITADOS PELO MÉDICO',
+      );
+      expect(lerEstilo(c, 'sintese', 'tc-abdome-total')).toBe('PARES EDITADOS PELO MÉDICO'); // médico vence a base
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
       rmSync(acervoDir, { recursive: true, force: true });

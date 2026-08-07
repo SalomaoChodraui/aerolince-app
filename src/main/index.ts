@@ -461,7 +461,7 @@ const AlvoAprendizadoSchema = z.object({
   arquivos: z.array(z.string().min(1)).min(1),
 });
 const AlvosAprendizadoSchema = z.array(AlvoAprendizadoSchema).min(1);
-const TipoEstiloSchema = z.enum(['mascara', 'regras', 'frasario']);
+const TipoEstiloSchema = z.enum(['mascara', 'regras', 'frasario', 'sintese']);
 
 /**
  * I5: rejeita alvos com algum `arquivo` fora de `config.acervoDir` ou de um tempdir do corpus

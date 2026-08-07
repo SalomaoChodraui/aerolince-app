@@ -215,9 +215,15 @@ export interface ItemEstilo {
   origemEfetiva: 'base' | 'minha';
 }
 
+/** Tipos de item editáveis no "Meu estilo" — `sintese` é a tabela manual dos pares
+ *  corpo → conclusão (`regras/sintese-<id>.md`, grupo próprio na UI, `nome` = id do exame). */
+export type TipoEstilo = 'mascara' | 'regras' | 'frasario' | 'sintese';
+
 export interface ResumoEstilo {
   mascaras: ItemEstiloMascara[];
   regras: ItemEstilo[];
+  /** Síntese da conclusão por exame — arquivos `regras/sintese-*.md`, `nome` SEM o prefixo. */
+  sintese: ItemEstilo[];
   frasario: ItemEstilo[];
 }
 
@@ -249,14 +255,24 @@ export function listarEstilo(config: Config): ResumoEstilo {
     nome: m.nome,
     origemEfetiva: (existsSync(join(config.masksDir, `${m.id}.md`)) ? 'minha' : 'base') as 'base' | 'minha',
   }));
-  const regras = itensComOrigem(join(config.bibliotecaBaseDir, 'regras'), join(config.masksDir, 'regras'));
+  // Síntese mora na MESMA pasta `regras/` com o prefixo `sintese-` (é onde `loadRegras` a lê),
+  // mas na UI é um grupo PRÓPRIO — a "tabela manual" dos pares corpo → conclusão. Separa aqui
+  // e expõe o `nome` SEM o prefixo (o id do exame), como `lerEstilo`/`salvarEstilo` esperam
+  // para o tipo 'sintese'.
+  const regrasTodas = itensComOrigem(join(config.bibliotecaBaseDir, 'regras'), join(config.masksDir, 'regras'));
+  const regras = regrasTodas.filter((r) => !r.nome.startsWith('sintese-'));
+  const sintese = regrasTodas
+    .filter((r) => r.nome.startsWith('sintese-'))
+    .map((r) => ({ ...r, nome: r.nome.slice('sintese-'.length) }));
   const frasario = itensComOrigem(join(config.bibliotecaBaseDir, 'frasario'), join(config.masksDir, 'frasario'));
-  return { mascaras, regras, frasario };
+  return { mascaras, regras, sintese, frasario };
 }
 
 /** Caminho relativo (dentro de uma camada) do item — `nome` já validado pelo chamador. */
-function caminhoRelativoDe(tipo: 'mascara' | 'regras' | 'frasario', nome: string): string {
-  return tipo === 'mascara' ? `${nome}.md` : join(tipo, `${nome}.md`);
+function caminhoRelativoDe(tipo: TipoEstilo, nome: string): string {
+  if (tipo === 'mascara') return `${nome}.md`;
+  if (tipo === 'sintese') return join('regras', `sintese-${nome}.md`); // mesmo caminho que loadRegras lê
+  return join(tipo, `${nome}.md`);
 }
 
 /**
@@ -264,7 +280,7 @@ function caminhoRelativoDe(tipo: 'mascara' | 'regras' | 'frasario', nome: string
  * `validarNomeRascunho` — mesma barreira antitraversal usada pelos rascunhos
  * (rejeita `/`, `\`, `.`, `..`; reuso deliberado, a validação é genérica).
  */
-export function lerEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasario', nome: string): string {
+export function lerEstilo(config: Config, tipo: TipoEstilo, nome: string): string {
   validarNomeRascunho(nome);
   const rel = caminhoRelativoDe(tipo, nome);
   const doMedico = join(config.masksDir, rel);
@@ -280,7 +296,7 @@ export function lerEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasario
  * Frontmatter validado (zod) quando `tipo === 'mascara'`, ANTES de tocar o
  * disco — mesma checagem usada por `aplicarRascunho` para promoção de rascunho.
  */
-export function salvarEstilo(config: Config, tipo: 'mascara' | 'regras' | 'frasario', nome: string, texto: string): void {
+export function salvarEstilo(config: Config, tipo: TipoEstilo, nome: string, texto: string): void {
   validarNomeRascunho(nome);
   if (tipo === 'mascara') {
     const { data } = matter(texto);

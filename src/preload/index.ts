@@ -44,7 +44,8 @@ type ProgressoAprendizado = { chave: string; etapa: string; atual: number; total
 type Rascunho = { arquivo: string; tipo: 'mascara' | 'regras' | 'sintese'; alvo: string };
 type ItemEstiloMascara = { id: string; nome: string; origemEfetiva: 'base' | 'minha' };
 type ItemEstilo = { nome: string; origemEfetiva: 'base' | 'minha' };
-type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: ItemEstilo[]; frasario: ItemEstilo[] };
+type ResumoEstilo = { mascaras: ItemEstiloMascara[]; regras: ItemEstilo[]; sintese: ItemEstilo[]; frasario: ItemEstilo[] };
+type TipoEstilo = 'mascara' | 'regras' | 'frasario' | 'sintese';
 type ResumoReaprender = {
   alvos: AlvoAprendizado[];
   semArquivos: { maskId: string; nome: string }[];
@@ -136,11 +137,11 @@ const api = {
   rascunhoAplicar: (arquivo: string): Promise<{ destino: string }> => ipcRenderer.invoke('rascunho-aplicar', arquivo),
   rascunhoDescartar: (arquivo: string): Promise<void> => ipcRenderer.invoke('rascunho-descartar', arquivo),
 
-  // Meu estilo (biblioteca do médico: máscaras/regras/frasário)
+  // Meu estilo (biblioteca do médico: máscaras/regras/síntese da conclusão/frasário)
   estiloListar: (): Promise<ResumoEstilo> => ipcRenderer.invoke('estilo-listar'),
-  estiloLer: (tipo: 'mascara' | 'regras' | 'frasario', nome: string): Promise<string> =>
+  estiloLer: (tipo: TipoEstilo, nome: string): Promise<string> =>
     ipcRenderer.invoke('estilo-ler', tipo, nome),
-  estiloSalvar: (tipo: 'mascara' | 'regras' | 'frasario', nome: string, texto: string): Promise<void> =>
+  estiloSalvar: (tipo: TipoEstilo, nome: string, texto: string): Promise<void> =>
     ipcRenderer.invoke('estilo-salvar', tipo, nome, texto),
 
   // Janelas e utilidades
