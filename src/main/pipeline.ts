@@ -10,7 +10,10 @@ import { Config, loadConfig } from '../core/config/schema.js';
 import { loadProfile, loadRegras } from '../core/contexto.js';
 import { stripMarkers } from '../core/engine/diff.js';
 import { generate, refine, selectMask } from '../core/engine/engine.js';
-import { LLMClient, LLMUsage, estimateCostUSD } from '../core/llm/anthropic.js';
+import { estimateCostUSD } from '../core/llm/anthropic.js';
+import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
+import type { LLMProvider } from '../core/llm/types.js';
+import type { LLMUsage } from '../core/llm/types.js';
 import { getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
@@ -79,6 +82,11 @@ function exigirChave(nome: 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY'): void {
   if (!process.env[nome]) {
     throw new Error(`chave ${nome} não configurada — abra Configurações → Chaves de API pelo menu da bandeja`);
   }
+}
+
+/** Gate BYOK: exige TODAS as chaves do modo configurado (OpenAI sempre; Anthropic só no motor padrão). */
+export function exigirChaves(config: Config): void {
+  for (const nome of chavesNecessarias(config)) exigirChave(nome);
 }
 
 export function processarTexto(transcript: string): Promise<ResultadoPipeline> {
@@ -176,16 +184,16 @@ interface Selecao {
 }
 
 async function processarTranscript(transcript: string, sttMs: number): Promise<ResultadoPipeline> {
-  exigirChave('ANTHROPIC_API_KEY');
   const config = getConfig();
+  exigirChaves(config);
   const masks = loadLibrary(config.masksDir);
   const san = sanitizeComando(transcript);
-  const llm = new LLMClient();
+  const { llm, modelos } = criarLLM(config);
 
   const local = matchLocal(san.texto, masks);
   const sel = local
     ? { mask: local, confianca: 'alta' as const, durationMs: 0, usage: null }
-    : await selectMask(llm, config.llm.selectionModel, san.texto, masks);
+    : await selectMask(llm, modelos.selecao, san.texto, masks);
   if (!sel.mask || sel.confianca === 'baixa') {
     throw new Error(
       'não tive certeza do exame — repita o comando citando o nome do exame (ex.: "tomografia de abdome total com contraste, …")',
@@ -199,7 +207,15 @@ async function processarTranscript(transcript: string, sttMs: number): Promise<R
     }
     return { tipo: 'confirmar-mascara', transcript: san.texto, confianca: 'media', candidatos, avisos: san.avisos };
   }
-  return gerarLaudo(llm, config, { mask: sel.mask, confianca: sel.confianca, durationMs: sel.durationMs, usage: sel.usage }, san.texto, sttMs, san.avisos);
+  return gerarLaudo(
+    llm,
+    config,
+    modelos,
+    { mask: sel.mask, confianca: sel.confianca, durationMs: sel.durationMs, usage: sel.usage },
+    san.texto,
+    sttMs,
+    san.avisos,
+  );
 }
 
 /**
@@ -225,20 +241,21 @@ export async function gerarComMascara(
   transcript: string,
   avisosPrevios: string[] = [],
 ): Promise<ResultadoLaudo> {
-  exigirChave('ANTHROPIC_API_KEY');
   const config = getConfig();
+  exigirChaves(config);
   const masks = loadLibrary(config.masksDir);
   const mask = getMask(masks, maskId);
   if (!mask) throw new Error(`máscara não encontrada: ${maskId}`);
   const san = sanitizeComando(transcript);
-  const llm = new LLMClient();
+  const { llm, modelos } = criarLLM(config);
   const avisos = dedupAvisos(avisosPrevios, san.avisos);
-  return gerarLaudo(llm, config, { mask, confianca: 'manual', durationMs: 0, usage: null }, san.texto, 0, avisos);
+  return gerarLaudo(llm, config, modelos, { mask, confianca: 'manual', durationMs: 0, usage: null }, san.texto, 0, avisos);
 }
 
 async function gerarLaudo(
-  llm: LLMClient,
+  llm: LLMProvider,
   config: Config,
+  modelos: { selecao: string; geracao: string; rapido: string },
   sel: Selecao,
   transcript: string,
   sttMs: number,
@@ -251,7 +268,7 @@ async function gerarLaudo(
     transcript,
     profileName: profile.name,
     profileBody: profile.body,
-    model: config.llm.generationModel,
+    model: modelos.geracao,
     regras,
   });
 
@@ -263,8 +280,8 @@ async function gerarLaudo(
     versions: [gen.reportRaw],
   };
 
-  const custoSel = sel.usage ? estimateCostUSD(config.llm.selectionModel, sel.usage) : 0;
-  const custoGer = estimateCostUSD(config.llm.generationModel, gen.usage);
+  const custoSel = sel.usage ? estimateCostUSD(modelos.selecao, sel.usage) : 0;
+  const custoGer = estimateCostUSD(modelos.geracao, gen.usage);
   const avisosCusto =
     custoSel === null || custoGer === null
       ? ['custo não estimado — o modelo configurado não está na tabela de preços']
@@ -295,19 +312,20 @@ export function getOutputDir(): string {
 async function refinarTranscript(command: string, sttMs: number): Promise<ResultadoLaudo> {
   if (!sessao) throw new Error('nenhum laudo nesta sessão para refinar — gere um laudo primeiro');
   const config = getConfig();
+  exigirChaves(config);
   const san = sanitizeComando(command);
-  const llm = new LLMClient();
+  const { llm, modelos } = criarLLM(config);
   const gen = await refine(llm, {
     mask: sessao.mask,
     currentReportRaw: sessao.versions[sessao.versions.length - 1]!,
     command: san.texto,
     profileName: sessao.profileName,
     profileBody: sessao.profileBody,
-    model: config.llm.generationModel,
+    model: modelos.geracao,
     regras: sessao.regras,
   });
   sessao.versions.push(gen.reportRaw);
-  const custoRef = estimateCostUSD(config.llm.generationModel, gen.usage);
+  const custoRef = estimateCostUSD(modelos.geracao, gen.usage);
   return {
     tipo: 'laudo',
     report: gen.report,
