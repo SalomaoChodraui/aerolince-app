@@ -15,11 +15,28 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
+import { z } from 'zod';
+import {
+  aplicarRascunho,
+  descartarRascunho,
+  lerRascunho,
+  listarRascunhos,
+} from '../core/aprendizado/aplicar.js';
 import { consolidarSegmentos, particionarPorBytes } from '../core/audio/consolidar.js';
 import { encodeWavPcm16 } from '../core/audio/wav.js';
 import { Config, loadConfig, saveConfig } from '../core/config/schema.js';
 import { saveReport, saveSidecar } from '../core/output/output.js';
 import { MAX_AUDIO_BYTES } from '../core/stt/audio-guard.js';
+import { escolherArquivosAcervo, importarAcervo } from './acervo.js';
+import {
+  AlvoAprendizado,
+  cancelarAprendizado,
+  estimarAprendizado,
+  lerEstilo,
+  listarEstilo,
+  rodarAprendizado,
+  salvarEstilo,
+} from './aprendizado.js';
 import { recuperarSpoolOrfao } from './audio/recovery.js';
 import { SessaoAudio } from './audio/sessao.js';
 import {
@@ -232,6 +249,15 @@ function estado(fase: string, msg?: string): void {
   floatWin?.webContents.send('estado', { fase, msg });
 }
 
+// Progresso de acervo/aprendizado (Bloco 3): a janela que hospeda o wizard/"Meu
+// estilo" ainda não existe neste bloco (T6/T7) — manda a TODAS as janelas vivas,
+// mesmo padrão do canal 'estado' acima (o destino certo ganha o evento quando existir).
+function broadcast(canal: string, payload: unknown): void {
+  for (const w of [floatWin, resultWin, settingsWin, historicoWin, onboardingWin]) {
+    if (w && !w.isDestroyed()) w.webContents.send(canal, payload);
+  }
+}
+
 let ultimoArquivo = '';
 
 // Ditado segmentado: um controller único no main + raiz do spool cifrado (userData/spool).
@@ -350,6 +376,18 @@ async function confirmarDestrutivo(message: string, acao: string): Promise<boole
     : await dialog.showMessageBox(opts);
   return response === 0;
 }
+
+// ── Validação zod das fronteiras IPC de acervo/aprendizado/estilo (Bloco 3) ──
+const CaminhosSchema = z.array(z.string().min(1)).min(1);
+const AlvoAprendizadoSchema = z.object({
+  tipo: z.enum(['destilar', 'aprender']),
+  chave: z.string().min(1),
+  // mesma regra do id de máscara (MaskFrontmatterSchema) — vira nome de arquivo no core, sem barra/ponto.
+  maskId: z.string().regex(/^[a-z0-9-]+$/, 'maskId deve ser kebab-case'),
+  arquivos: z.array(z.string().min(1)).min(1),
+});
+const AlvosAprendizadoSchema = z.array(AlvoAprendizadoSchema).min(1);
+const TipoEstiloSchema = z.enum(['mascara', 'regras', 'frasario']);
 
 // ── IPC ──────────────────────────────────────────────────────────────────────
 function registrarIpc(): void {
@@ -491,6 +529,59 @@ function registrarIpc(): void {
   ipcMain.handle('concluir-onboarding', () => {
     saveConfig(appRoot, { onboardingConcluido: true });
     onboardingWin?.close();
+  });
+
+  // ── Acervo (Bloco 3): importação 100% local, sem LLM ───────────────────────
+  ipcMain.handle('acervo-escolher-arquivos', () => escolherArquivosAcervo());
+  ipcMain.handle('acervo-importar', (_e, paths: unknown) => {
+    const parsed = CaminhosSchema.safeParse(paths);
+    if (!parsed.success) throw new Error('lista de arquivos inválida para importação do acervo');
+    return importarAcervo(parsed.data, cfg(), (p) => broadcast('acervo-progresso', p));
+  });
+
+  // ── Aprendizado (Bloco 3): estimativa sem LLM; execução com gate BYOK ──────
+  ipcMain.handle('aprendizado-estimar', (_e, alvos: unknown) => {
+    const parsed = AlvosAprendizadoSchema.safeParse(alvos);
+    if (!parsed.success) throw new Error('alvos de aprendizado inválidos');
+    return estimarAprendizado(parsed.data as AlvoAprendizado[], cfg());
+  });
+  ipcMain.handle('aprendizado-rodar', (_e, alvos: unknown) => {
+    const parsed = AlvosAprendizadoSchema.safeParse(alvos);
+    if (!parsed.success) throw new Error('alvos de aprendizado inválidos');
+    return rodarAprendizado(parsed.data as AlvoAprendizado[], cfg(), (p) => broadcast('aprendizado-progresso', p));
+  });
+  ipcMain.handle('aprendizado-cancelar', () => {
+    cancelarAprendizado();
+  });
+
+  // ── Rascunhos (destilar/aprender pendentes de revisão) ─────────────────────
+  ipcMain.handle('rascunhos-listar', () => listarRascunhos(cfg().masksDir));
+  ipcMain.handle('rascunho-ler', (_e, arquivo: unknown) => {
+    if (typeof arquivo !== 'string') throw new Error('nome de rascunho inválido');
+    return lerRascunho(cfg().masksDir, arquivo);
+  });
+  ipcMain.handle('rascunho-aplicar', (_e, arquivo: unknown) => {
+    if (typeof arquivo !== 'string') throw new Error('nome de rascunho inválido');
+    return aplicarRascunho(cfg().masksDir, arquivo);
+  });
+  ipcMain.handle('rascunho-descartar', (_e, arquivo: unknown) => {
+    if (typeof arquivo !== 'string') throw new Error('nome de rascunho inválido');
+    descartarRascunho(cfg().masksDir, arquivo);
+  });
+
+  // ── Meu estilo (biblioteca do médico: máscaras/regras/frasário) ────────────
+  ipcMain.handle('estilo-listar', () => listarEstilo(cfg()));
+  ipcMain.handle('estilo-ler', (_e, tipo: unknown, nome: unknown) => {
+    const t = TipoEstiloSchema.safeParse(tipo);
+    if (!t.success || typeof nome !== 'string') throw new Error('parâmetros de estilo inválidos');
+    return lerEstilo(cfg(), t.data, nome);
+  });
+  ipcMain.handle('estilo-salvar', (_e, tipo: unknown, nome: unknown, texto: unknown) => {
+    const t = TipoEstiloSchema.safeParse(tipo);
+    if (!t.success || typeof nome !== 'string' || typeof texto !== 'string') {
+      throw new Error('parâmetros de estilo inválidos');
+    }
+    salvarEstilo(cfg(), t.data, nome, texto);
   });
 }
 

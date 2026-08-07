@@ -1,0 +1,185 @@
+/**
+ * Orquestração do acervo (Bloco 3, T5): escolha de arquivos (diálogo nativo) e
+ * importação — extrai + classifica + sanitiza, 100% local (NENHUMA chamada de
+ * LLM/rede aqui). `importarAcervo` reporta progresso por evento (o chamador em
+ * `index.ts` repassa a TODAS as janelas vivas, mesmo padrão do canal `estado`).
+ */
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { basename, extname, join } from 'node:path';
+import { dialog } from 'electron';
+import { agruparClusters, classificarDocumento, sugerirMaskId, type Classificacao } from '../core/acervo/classificar.js';
+import { extrairTexto } from '../core/acervo/extrair.js';
+import { corpoDoArquivo, sanitizarParaAcervo } from '../core/acervo/sanitizar.js';
+import type { Config } from '../core/config/schema.js';
+import { bibliotecasDe, loadLibrary } from '../core/masks/library.js';
+
+const EXTENSOES_ACEITAS = new Set(['.pdf', '.docx', '.txt']);
+
+export interface ProgressoAcervo {
+  fase: 'extraindo' | 'classificando' | 'sanitizando';
+  atual: number;
+  total: number;
+  arquivo?: string;
+}
+
+export interface ClusterImportacao {
+  chave: string;
+  exame: string | null;
+  modalidade: string;
+  contraste: 'com' | 'sem';
+  quantidade: number;
+  /** Id de máscara já existente na biblioteca (base+médico) que casa com este cluster; null se nenhuma. */
+  maskIdExistente: string | null;
+}
+
+export interface ResumoImportacao {
+  clusters: ClusterImportacao[];
+  /** Nomes dos arquivos sem texto útil extraído (imagem, formato não suportado, erro de leitura). */
+  semTexto: string[];
+  naoReconhecidos: number;
+  /** Até 3 amostras sanitizadas escolhidas ao acaso — texto já pronto p/ exibição (sem paciente). */
+  amostras: { arquivo: string; texto: string }[];
+  suspeitos: number;
+}
+
+/**
+ * Abre o diálogo nativo para escolher arquivos OU uma pasta (openFile +
+ * multiSelections + openDirectory), filtrando pdf/docx/txt. Uma pasta
+ * escolhida expande 1 nível (só os arquivos diretamente dentro dela — sem
+ * recursão em subpastas). `null` quando o médico cancela ou nada é encontrado.
+ */
+export async function escolherArquivosAcervo(): Promise<string[] | null> {
+  const r = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections', 'openDirectory'],
+    filters: [{ name: 'Laudos (PDF, Word, texto)', extensions: ['pdf', 'docx', 'txt'] }],
+  });
+  if (r.canceled || r.filePaths.length === 0) return null;
+
+  const arquivos: string[] = [];
+  for (const p of r.filePaths) {
+    if (!existsSync(p)) continue;
+    if (statSync(p).isDirectory()) {
+      for (const f of readdirSync(p)) {
+        const caminho = join(p, f);
+        if (EXTENSOES_ACEITAS.has(extname(f).toLowerCase()) && statSync(caminho).isFile()) arquivos.push(caminho);
+      }
+    } else if (EXTENSOES_ACEITAS.has(extname(p).toLowerCase())) {
+      arquivos.push(p);
+    }
+  }
+  return arquivos.length > 0 ? arquivos : null;
+}
+
+/** Ids de máscara já existentes nas duas camadas (base + médico); nunca lança — biblioteca vazia vira conjunto vazio. */
+function idsDeMascarasExistentes(config: Config): Set<string> {
+  try {
+    return new Set(loadLibrary(bibliotecasDe(config)).map((m) => m.id));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Nome de arquivo já gravado pelo acervo: `<chave>_<data|s-d>_<nnn>.md` (ver `sanitizar.ts`). */
+const NOME_ARQUIVO_ACERVO = /^(.+)_(?:\d{4}-\d{2}-\d{2}|s-d)_(\d{3})\.md$/;
+
+/** Contagem atual por chave de cluster já gravada em `acervoDir` — para a numeração `nnn` continuar entre importações, nunca sobrescrevendo entradas antigas. */
+function contadoresExistentes(acervoDir: string): Map<string, number> {
+  const contagem = new Map<string, number>();
+  if (!existsSync(acervoDir)) return contagem;
+  for (const f of readdirSync(acervoDir)) {
+    const m = NOME_ARQUIVO_ACERVO.exec(f);
+    if (!m) continue;
+    const chave = m[1]!;
+    contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+  }
+  return contagem;
+}
+
+/** Escolhe até `n` itens ao acaso, sem repetição. */
+function amostraAleatoria<T>(itens: T[], n: number): T[] {
+  const copia = [...itens];
+  const escolhidos: T[] = [];
+  while (copia.length > 0 && escolhidos.length < n) {
+    const i = Math.floor(Math.random() * copia.length);
+    escolhidos.push(copia.splice(i, 1)[0]!);
+  }
+  return escolhidos;
+}
+
+/**
+ * Importa os arquivos escolhidos para `config.acervoDir`: extrai texto →
+ * classifica → sanitiza, TUDO local (sem rede, sem LLM). `onProgresso` dispara
+ * uma vez por arquivo em cada uma das 3 fases — o chamador (main/index.ts)
+ * repassa para todas as janelas vivas via `webContents.send`.
+ *
+ * `maskIdExistente` de cada cluster casa `sugerirMaskId(cluster)` (= a própria
+ * chave) com os ids já carregados pela biblioteca (base+médico) — é o sinal
+ * que o wizard usa para oferecer "aprender" (máscara já existe) vs "destilar"
+ * (máscara nova).
+ */
+export async function importarAcervo(
+  paths: string[],
+  config: Config,
+  onProgresso?: (p: ProgressoAcervo) => void,
+): Promise<ResumoImportacao> {
+  // Fase 1 — extração de texto (IO; um arquivo por vez, ordem previsível).
+  const extraidos: { caminho: string; texto: string }[] = [];
+  const semTexto: string[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    const caminho = paths[i]!;
+    onProgresso?.({ fase: 'extraindo', atual: i + 1, total: paths.length, arquivo: basename(caminho) });
+    const r = await extrairTexto(caminho);
+    if (r.ok) extraidos.push({ caminho, texto: r.texto });
+    else semTexto.push(basename(caminho)); // 'sem-texto' | 'formato' | 'erro' — todos entram aqui: nenhum vira acervo
+  }
+
+  // Fase 2 — classificação (pura, sem IO extra).
+  const classificados: { caminho: string; texto: string; classif: Classificacao }[] = [];
+  for (let i = 0; i < extraidos.length; i++) {
+    const { caminho, texto } = extraidos[i]!;
+    onProgresso?.({ fase: 'classificando', atual: i + 1, total: extraidos.length, arquivo: basename(caminho) });
+    classificados.push({ caminho, texto, classif: classificarDocumento(texto) });
+  }
+
+  const naoReconhecidos = classificados.filter((c) => c.classif.exame === null).length;
+  const clustersBrutos = agruparClusters(classificados.map((c) => ({ arquivo: c.caminho, c: c.classif })));
+  const idsExistentes = idsDeMascarasExistentes(config);
+  const clusters: ClusterImportacao[] = clustersBrutos.map((c) => ({
+    chave: c.chave,
+    exame: c.exame,
+    modalidade: c.modalidade,
+    contraste: c.contraste,
+    quantidade: c.arquivos.length,
+    maskIdExistente: idsExistentes.has(sugerirMaskId(c)) ? sugerirMaskId(c) : null,
+  }));
+  const chavePorCaminho = new Map<string, string>();
+  for (const c of clustersBrutos) for (const arquivo of c.arquivos) chavePorCaminho.set(arquivo, c.chave);
+
+  // Fase 3 — sanitização + gravação em `config.acervoDir` (nome de arquivo sem paciente).
+  const contadores = contadoresExistentes(config.acervoDir);
+  let suspeitos = 0;
+  const gravados: string[] = [];
+  for (let i = 0; i < classificados.length; i++) {
+    const { caminho, texto, classif } = classificados[i]!;
+    onProgresso?.({ fase: 'sanitizando', atual: i + 1, total: classificados.length, arquivo: basename(caminho) });
+    const chave = chavePorCaminho.get(caminho)!;
+    const indice = (contadores.get(chave) ?? 0) + 1;
+    contadores.set(chave, indice);
+    const r = sanitizarParaAcervo({
+      texto,
+      nomeOriginal: basename(caminho),
+      classif,
+      acervoDir: config.acervoDir,
+      indice,
+    });
+    if (r.suspeito) suspeitos++;
+    gravados.push(r.arquivo);
+  }
+
+  const amostras = amostraAleatoria(gravados, 3).map((arquivo) => ({
+    arquivo: basename(arquivo),
+    texto: corpoDoArquivo(arquivo),
+  }));
+
+  return { clusters, semTexto, naoReconhecidos, amostras, suspeitos };
+}
