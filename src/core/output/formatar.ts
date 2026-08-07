@@ -10,8 +10,10 @@
  * - Nenhum texto ditado é descartado por falha de parse: rótulo desconhecido
  *   permanece como conteúdo da seção corrente; texto sem rótulos sai intacto;
  *   qualquer exceção interna devolve o texto de entrada.
- * - Seção com `ativa: false` é OMITIDA da saída (o conteúdo segue íntegro no
- *   reportRaw e no sidecar — só não aparece no texto entregue).
+ * - `ativa: false` significa "não ofereça/crie esta seção", NUNCA "apague o
+ *   que existe": uma seção só é omitida da saída se estiver desligada E vazia.
+ *   Seção desligada COM conteúdo é sempre renderizada — nada que o médico
+ *   descreveu pode desaparecer do laudo.
  */
 
 export type ParagrafoLaudo = 'por-bloco' | 'corrido';
@@ -174,6 +176,12 @@ function formatar(texto: string, prefs: PrefsLaudo): string {
 
   const prefPorId = new Map(prefs.secoes.map((s) => [s.id, s]));
   const ativa = (seg: Segmento): boolean => prefPorId.get(seg.id)?.ativa ?? true;
+  const temConteudo = (seg: Segmento): boolean =>
+    seg.rotuloResto.trim() !== '' || seg.corpo.some((l) => l.trim() !== '');
+  // Omissão da saída: seção desligada E vazia, ou rótulo órfão (seção vazia).
+  // `ativa: false` NUNCA apaga conteúdo existente — só evita rótulo de seção vazia.
+  const omitida = (seg: Segmento): boolean =>
+    !temConteudo(seg) && (seg.rotuloLinha !== null || !ativa(seg));
   /** Novo rótulo APENAS quando o médico o customizou (≠ do padrão) — assim o
    *  default global nunca troca "Opinião:" do crânio por "Conclusão:". */
   const rotuloCustomizado = (seg: Segmento): string | null => {
@@ -185,14 +193,12 @@ function formatar(texto: string, prefs: PrefsLaudo): string {
 
   // Caminho rápido de invariância: nada a mudar → devolve a ENTRADA byte-idêntica
   const nadaMuda =
-    prefs.paragrafo === 'por-bloco' && segmentos.every((s) => ativa(s) && rotuloCustomizado(s) === null);
+    prefs.paragrafo === 'por-bloco' && segmentos.every((s) => !omitida(s) && rotuloCustomizado(s) === null);
   if (nadaMuda) return texto;
 
   const partes: string[] = [];
   for (const seg of segmentos) {
-    if (!ativa(seg)) continue; // omitida da SAÍDA (o reportRaw segue íntegro)
-    const temConteudo = seg.rotuloResto.trim() !== '' || seg.corpo.some((l) => l.trim() !== '');
-    if (seg.rotuloLinha !== null && !temConteudo) continue; // seção vazia: sem rótulo órfão
+    if (omitida(seg)) continue; // desligada E vazia (ou rótulo órfão) — conteúdo nunca some
     const novoRotulo = rotuloCustomizado(seg);
     const linhaRotulo =
       seg.rotuloLinha === null ? null : novoRotulo !== null ? novoRotulo + seg.rotuloResto : seg.rotuloLinha;

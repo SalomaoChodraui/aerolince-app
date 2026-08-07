@@ -105,32 +105,52 @@ describe('formatarLaudo — modo corrido', () => {
 });
 
 describe('formatarLaudo — seções ativas/inativas e rótulos', () => {
-  it('seção inativa some da saída, mas o restante fica intacto', () => {
-    const out = formatarLaudo(ABDOME, prefs('por-bloco', { tecnica: { ativa: false } }));
-    expect(out).not.toContain('Técnica:');
-    expect(out).not.toContain('Realizado estudo helicoidal');
-    expect(out).toContain('TOMOGRAFIA COMPUTADORIZADA DE ABDOME E PELVE\n\nAnálise:\n\nFígado de dimensões normais');
-    expect(out).toContain('Conclusão:\n\nDiverticulite do cólon direito, não complicada.\nColelitíase.');
-  });
-
   it('rótulo renomeado aparece na saída', () => {
     const out = formatarLaudo(ABDOME, prefs('por-bloco', { conclusao: { rotulo: 'Impressão diagnóstica:' } }));
     expect(out).toContain('Impressão diagnóstica:\n\nDiverticulite do cólon direito');
     expect(out).not.toContain('Conclusão:');
   });
 
-  it('título pode ser desligado', () => {
-    const out = formatarLaudo(ABDOME, prefs('por-bloco', { titulo: { ativa: false } }));
-    expect(out.startsWith('Técnica:')).toBe(true);
-    expect(out).not.toContain('TOMOGRAFIA');
+  it('rótulo padrão NÃO sobrescreve variante do médico já no texto (Opinião: fica)', () => {
+    // conclusao com rótulo de fábrica ("Conclusão:") e remontagem forçada pelo
+    // modo corrido: mesmo assim "Opinião:" é preservada
+    const out = formatarLaudo(CRANIO, prefs('corrido'));
+    expect(out).toContain('Opinião:\nEstudo tomográfico do crânio dentro dos limites da normalidade.');
+    expect(out).not.toContain('Conclusão:');
+  });
+});
+
+describe('formatarLaudo — seção desligada NUNCA apaga conteúdo (ativa = "não ofereça/crie")', () => {
+  it('caso do coordenador: crânio com Nota + corrido + observacao desligada (default) → a Nota APARECE', () => {
+    const comNota = `${CRANIO}\n\nNota: Comparado com exame prévio.`;
+    const out = formatarLaudo(comNota, prefs('corrido')); // observacao nasce ativa:false
+    expect(out).toContain('Nota: Comparado com exame prévio.');
+    expect(out).toContain('Opinião:\nEstudo tomográfico do crânio dentro dos limites da normalidade.');
+    expect(out).not.toContain('Conclusão:');
+    expect(out).not.toContain('Observação:');
   });
 
-  it('rótulo padrão NÃO sobrescreve variante do médico já no texto (Opinião: fica)', () => {
-    // conclusao com rótulo de fábrica ("Conclusão:") mas outra seção customizada:
-    // a remontagem roda e mesmo assim "Opinião:" é preservada
-    const out = formatarLaudo(CRANIO, prefs('por-bloco', { tecnica: { ativa: false } }));
-    expect(out).toContain('Opinião:');
-    expect(out).not.toContain('Conclusão:');
+  it('seção desligada E vazia continua omitida (o switch evita rótulo órfão)', () => {
+    const t = `TITULO\n\nAnálise:\n\nFígado normal.\n\nObservação:`;
+    const out = formatarLaudo(t, prefs('corrido')); // observacao inativa por padrão
+    expect(out).toBe('TITULO\n\nAnálise:\nFígado normal.');
+  });
+
+  it('tecnica desligada COM técnica preenchida: aparece mesmo assim (nos dois modos)', () => {
+    expect(formatarLaudo(ABDOME, prefs('por-bloco', { tecnica: { ativa: false } }))).toBe(ABDOME);
+    const corrido = formatarLaudo(ABDOME, prefs('corrido', { tecnica: { ativa: false } }));
+    expect(corrido).toContain('Técnica:\nRealizado estudo helicoidal do abdome e da pelve');
+  });
+
+  it('título desligado mas preenchido também não some', () => {
+    const out = formatarLaudo(ABDOME, prefs('corrido', { titulo: { ativa: false } }));
+    expect(out.startsWith('TOMOGRAFIA COMPUTADORIZADA DE ABDOME E PELVE')).toBe(true);
+  });
+
+  it('indicação ditada com a seção desligada aparece na saída (nada ditado some)', () => {
+    const t = `TITULO\n\nTécnica:\n\nEstudo helicoidal.\n\nIndicação:\nDor abdominal há 3 dias.\n\nAnálise:\n\nFígado normal.\n\nConclusão:\n\nNormal.`;
+    const out = formatarLaudo(t, prefs('corrido')); // indicacao nasce ativa:false
+    expect(out).toContain('Indicação:\nDor abdominal há 3 dias.');
   });
 });
 
@@ -202,7 +222,7 @@ describe('formatarLaudo — robustez (texto vem de LLM; nada pode sumir)', () =>
     expect(renome).toContain('Opinião: Exame normal.');
   });
 
-  it('todas as seções inativas: devolve o texto de entrada (nunca vazio)', () => {
+  it('todas as seções desligadas mas com conteúdo: NADA some (devolve o texto)', () => {
     const ajustes = Object.fromEntries(SECOES_PADRAO.map((s) => [s.id, { ativa: false }]));
     expect(formatarLaudo(ABDOME, prefs('por-bloco', ajustes))).toBe(ABDOME);
   });

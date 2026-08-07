@@ -251,8 +251,9 @@ function App() {
             </select>
           </div>
           <div className="desc" style={{ marginBottom: 8 }}>
-            Seções do laudo, na ordem do texto: desligue as que não quer no laudo final e edite os rótulos como
-            preferir. Indicação e Observação são preenchidas por voz (“indicação: …”, “observação: …”/“nota: …”).
+            Seções do laudo, na ordem do texto. O interruptor controla o que o app cria/oferece: seção desligada só
+            fica de fora quando está vazia — o que você ditou nunca some do laudo. Indicação e Observação são
+            preenchidas por voz (“indicação: …”, “observação: …”/“nota: …”).
           </div>
           {cfg.laudo.secoes.map((s) => (
             <div className="linha" key={s.id}>
