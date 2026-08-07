@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../shared/brand.css';
 import '../shared/window.css';
@@ -38,6 +38,18 @@ const PASSOS: Passo[] = [
         O Aerolince já sabe laudar TC com um <b>laudário clássico embutido</b> — e aprende o <b>SEU jeito</b>:
         quanto mais laudos seus você importar (das modalidades que você mais usa), mais o laudo sai com a sua
         cara. Sequência, jargões e detalhes técnicos: <b>seus</b>.
+      </>
+    ),
+  },
+  {
+    id: 'ditar',
+    icone: <span className="passo-emoji">🎙️</span>,
+    titulo: 'Dite de qualquer lugar',
+    corpo: (
+      <>
+        Clique no <b>botão flutuante</b> (o “A”, que fica por cima do seu visualizador) ou use o atalho{' '}
+        <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd>. Fale, clique de novo para parar — <kbd>Esc</kbd>{' '}
+        cancela. Arraste o botão para onde preferir na tela.
       </>
     ),
   },
@@ -97,18 +109,21 @@ const CHAVES_IDX = PASSOS.findIndex((p) => p.id === 'chaves');
 // Bump ao reordenar/adicionar/remover passos: invalida um `passo` salvo sob uma
 // versão antiga (o índice passaria a apontar para um passo DIFERENTE do que o
 // médico realmente viu por último) em vez de arriscar reabrir no lugar errado.
-const VERSAO_PASSOS = 1;
+// v2: reintegração do passo `ditar` (removido por engano na v1) mudou os índices
+// de todo mundo a partir dele — qualquer `passo` salvo sob a v1 é descartado.
+const VERSAO_PASSOS = 2;
 
 function App() {
   const [i, setI] = useState(0);
   const [carregado, setCarregado] = useState(false);
   const [provider, setProvider] = useState<'anthropic' | 'openai'>('anthropic');
   const [chavesOk, setChavesOk] = useState(false);
+  // Reflete `config.onboarding.acervoImportado` — que só vira `true` quando o
+  // main confirma que um rascunho foi de fato APLICADO na biblioteca do médico
+  // (handler `rascunho-aplicar`, o sinal real de "importou e usou"). Chegamos
+  // nesse valor por dois caminhos: carga inicial (`configGet` no mount) e o
+  // broadcast `config-mudou` — nunca por heurística de foco de janela.
   const [acervoImportado, setAcervoImportado] = useState(false);
-  // Marca que o wizard de importação foi aberto por cima desta janela — o próximo
-  // foco de volta (fechou/minimizou o filho) é o sinal de "voltou de lá" que usamos
-  // para reavaliar o acervo (não há evento de "fechou" cruzando janelas hoje).
-  const abriuImportarRef = useRef(false);
 
   function avaliar(s: { chaves: Record<string, string> }, p: 'anthropic' | 'openai') {
     const okOpenai = s.chaves['OPENAI_API_KEY'] === 'ok';
@@ -149,17 +164,6 @@ function App() {
     void api.configSet({ onboarding: { passo: i } });
   }, [i, carregado]);
 
-  useEffect(() => {
-    function aoFocar() {
-      if (!abriuImportarRef.current) return;
-      abriuImportarRef.current = false;
-      setAcervoImportado(true);
-      void api.configSet({ onboarding: { acervoImportado: true } });
-    }
-    window.addEventListener('focus', aoFocar);
-    return () => window.removeEventListener('focus', aoFocar);
-  }, []);
-
   async function trocarMotor(p: 'anthropic' | 'openai') {
     setProvider(p);
     const c = (await api.configSet({
@@ -173,7 +177,6 @@ function App() {
   }
 
   function abrirWizardImportar(): void {
-    abriuImportarRef.current = true;
     void api.abrir('importar');
   }
 

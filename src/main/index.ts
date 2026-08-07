@@ -611,7 +611,13 @@ function registrarIpc(): void {
   });
   ipcMain.handle('rascunho-aplicar', (_e, arquivo: unknown) => {
     if (typeof arquivo !== 'string') throw new Error('nome de rascunho inválido');
-    return aplicarRascunho(cfg().masksDir, arquivo);
+    const r = aplicarRascunho(cfg().masksDir, arquivo);
+    // Sinal real de "o médico importou e usou o próprio jeito de laudar" (mais
+    // confiável que qualquer heurística de UI): só aqui, quando um rascunho é
+    // efetivamente aplicado na biblioteca dele, marcamos o onboarding.
+    const c = saveConfig(appRoot, { onboarding: { acervoImportado: true } });
+    broadcast('config-mudou', c);
+    return r;
   });
   ipcMain.handle('rascunho-descartar', (_e, arquivo: unknown) => {
     if (typeof arquivo !== 'string') throw new Error('nome de rascunho inválido');
