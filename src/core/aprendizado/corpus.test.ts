@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { corpusPorArquivos, corpusPorPrefixos, montarCorpus } from './corpus.js';
+import { corpusPorArquivos, corpusPorPrefixos, corpusPorPrefixosEmDirs, montarCorpus } from './corpus.js';
 
 describe('corpusPorPrefixos', () => {
   let dir: string;
@@ -51,6 +51,48 @@ describe('corpusPorPrefixos', () => {
     const r = corpusPorPrefixos(dir, ['tc-abdome'], 10, { sem: 'contraste intravenoso' });
 
     expect(r).toEqual([join(dir, 'tc-abdome_2026-01-02_002.md')]);
+  });
+});
+
+describe('corpusPorPrefixosEmDirs (C1 — usuário legado com tmp-sanitized + acervoDir novo)', () => {
+  let legado: string;
+  let acervo: string;
+
+  beforeEach(() => {
+    legado = mkdtempSync(join(tmpdir(), 'aprendizado-corpus-legado-'));
+    acervo = mkdtempSync(join(tmpdir(), 'aprendizado-corpus-acervo-'));
+  });
+
+  afterEach(() => {
+    rmSync(legado, { recursive: true, force: true });
+    rmSync(acervo, { recursive: true, force: true });
+  });
+
+  it('combina os dois diretórios: prefixo que só existe no legado não vira corpus zero só porque o acervo novo tem outros arquivos', () => {
+    writeFileSync(join(legado, 'CRANIO_2026-01-01_001.txt'), 'laudo legado 1');
+    writeFileSync(join(legado, 'CRANIO_2026-01-02_002.txt'), 'laudo legado 2');
+    writeFileSync(join(acervo, 'tc-abdome_2026-02-01_001.md'), 'outro exame, sem relação com CRANIO');
+
+    const r = corpusPorPrefixosEmDirs([legado, acervo], ['CRANIO'], 60);
+
+    expect(r).toEqual([join(legado, 'CRANIO_2026-01-01_001.txt'), join(legado, 'CRANIO_2026-01-02_002.txt')]);
+  });
+
+  it('junta arquivos do MESMO prefixo presentes nos dois diretórios e aplica o cap no conjunto combinado', () => {
+    writeFileSync(join(legado, 'tc-cranio_2026-01-01_001.md'), 'laudo 1');
+    writeFileSync(join(acervo, 'tc-cranio_2026-02-01_001.md'), 'laudo 2');
+
+    const r = corpusPorPrefixosEmDirs([legado, acervo], ['tc-cranio'], 1);
+
+    expect(r).toEqual([join(acervo, 'tc-cranio_2026-02-01_001.md')]); // último da lista combinada sobrevive ao cap
+  });
+
+  it('diretório inexistente na lista é ignorado sem lançar', () => {
+    writeFileSync(join(acervo, 'tc-cranio_2026-02-01_001.md'), 'laudo');
+
+    const r = corpusPorPrefixosEmDirs([join(legado, 'nao-existe'), acervo], ['tc-cranio'], 60);
+
+    expect(r).toEqual([join(acervo, 'tc-cranio_2026-02-01_001.md')]);
   });
 });
 

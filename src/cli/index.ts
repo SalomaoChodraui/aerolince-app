@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline';
 import matter from 'gray-matter';
 import { aplicarRascunho, descartarRascunho, listarRascunhos } from '../core/aprendizado/aplicar.js';
 import { aprenderRegras } from '../core/aprendizado/aprender.js';
-import { corpusPorPrefixos } from '../core/aprendizado/corpus.js';
+import { corpusPorPrefixosEmDirs } from '../core/aprendizado/corpus.js';
 import { destilarMascara } from '../core/aprendizado/destilar.js';
 import { loadConfig, type Config } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
@@ -247,15 +247,24 @@ async function gravar(outPath?: string): Promise<string> {
 }
 
 /**
- * Diretório de laudos sanitizados: `config.acervoDir` (novo, com frontmatter de
- * proveniência) se existir e tiver arquivos; senão o `tmp-sanitized` legado se
- * existir (compat com instalações antigas); senão o erro de sempre.
+ * Diretórios de laudos sanitizados a considerar, em ORDEM (mais recente/canônico por
+ * último — o cap de `corpusPorPrefixosEmDirs` mantém preferencialmente o FIM da lista
+ * combinada): o `tmp-sanitized` legado primeiro, depois `config.acervoDir` (novo, com
+ * frontmatter de proveniência). Um médico legado pode ter os DOIS ao mesmo tempo (acervo
+ * novo criado pelo wizard + laudos antigos nunca reimportados) — buscar só num dos dois
+ * (como antes) fazia `aprender`/`destilar` acharem corpus zero para prefixos que só
+ * existem no diretório preterido (ex.: `CRANIO_...` só no legado, mas `acervoDir` já não
+ * está mais vazio por causa de outros exames). Lança só quando NENHUM dos dois existe.
  */
-function sanitizedDir(config: Config): string {
-  if (existsSync(config.acervoDir) && readdirSync(config.acervoDir).length > 0) return config.acervoDir;
+function sanitizedDirs(config: Config): string[] {
+  const dirs: string[] = [];
   const legado = resolve(APP_ROOT, 'tmp-sanitized');
-  if (existsSync(legado)) return legado;
-  throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
+  if (existsSync(legado) && readdirSync(legado).length > 0) dirs.push(legado);
+  if (existsSync(config.acervoDir) && readdirSync(config.acervoDir).length > 0) dirs.push(config.acervoDir);
+  if (dirs.length === 0) {
+    throw new Error('laudos sanitizados não encontrados — rode antes: npm run sanitize -- "../Modelos de Laudos/Exames_TC_2026"');
+  }
+  return dirs;
 }
 
 /** Formata o custo estimado no mesmo texto usado por todo o resto da CLI. */
@@ -272,13 +281,13 @@ async function aprender(target: string) {
   const config = loadConfig(APP_ROOT);
   requireEnv(chavesNecessarias(config));
   const masks = loadMasks(config);
-  const sanDir = sanitizedDir(config);
+  const sanDirs = sanitizedDirs(config);
   const alvo = target === 'todos' ? masks.filter((m) => m.prefixos.length > 0) : masks.filter((m) => m.id === target);
   if (alvo.length === 0) throw new Error(`nenhuma máscara com prefixos para "${target}"`);
   const { llm, modelos } = criarLLM(config);
   for (const m of alvo) {
     const id = m.id;
-    const arquivos = corpusPorPrefixos(sanDir, m.prefixos, 60, { contendo: m.corpus_contendo, sem: m.corpus_sem });
+    const arquivos = corpusPorPrefixosEmDirs(sanDirs, m.prefixos, 60, { contendo: m.corpus_contendo, sem: m.corpus_sem });
     if (arquivos.length === 0) {
       console.warn(`nenhum laudo sanitizado para ${id} (prefixos: ${m.prefixos.join(', ')})`);
       continue;
@@ -300,8 +309,8 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
   if (!id || prefixos.length === 0) throw new Error('uso: laudo destilar <id-novo> <PREFIXO1> [PREFIXO2…] [--contendo "…"] [--sem "…"]');
   const config = loadConfig(APP_ROOT);
   requireEnv(chavesNecessarias(config));
-  const sanDir = sanitizedDir(config);
-  const arquivos = corpusPorPrefixos(sanDir, prefixos, 40, filtro);
+  const sanDirs = sanitizedDirs(config);
+  const arquivos = corpusPorPrefixosEmDirs(sanDirs, prefixos, 40, filtro);
   if (arquivos.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
   const { llm, modelos } = criarLLM(config);
   process.stdout.write(`Destilando ${id} de ${arquivos.length} laudos… `);

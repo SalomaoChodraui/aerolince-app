@@ -43,6 +43,20 @@ export function corpusPorArquivos(arquivos: string[], cap: number): string[] {
 }
 
 /**
+ * Como `corpusPorPrefixos`, mas busca em MÚLTIPLOS diretórios e combina o resultado antes de
+ * aplicar o cap — cobre o médico legado que tem `tmp-sanitized` (antigo) E `acervoDir` (novo)
+ * coexistindo: se a busca olhasse só um dos dois (o que `sanitizedDir` da CLI faz hoje, preferindo
+ * `acervoDir` assim que ele tem QUALQUER arquivo), prefixos que só existem no diretório
+ * preterido dariam corpus zero mesmo com laudos sanitizados de sobra. Diretórios inexistentes são
+ * ignorados; a ordem de `dirs` importa para o cap (últimos elementos dos diretórios finais
+ * sobrevivem primeiro — passe o diretório mais "atual" por último).
+ */
+export function corpusPorPrefixosEmDirs(dirs: string[], prefixos: string[], cap: number, filtro?: FiltroCorpus): string[] {
+  const todos = dirs.filter((d) => existsSync(d)).flatMap((d) => corpusPorPrefixos(d, prefixos, cap, filtro));
+  return todos.slice(-cap);
+}
+
+/**
  * Lê cada arquivo via `corpoDoArquivo` (tolera legado sem frontmatter),
  * RE-SANITIZA o corpo com `sanitize().clean` — defesa em profundidade contra
  * um laudo que tenha escapado da sanitização original do acervo — e junta

@@ -103,8 +103,14 @@ describe('corpusDoHistorico', () => {
   });
 });
 
+// Flow-style YAML (`prefixos: [a, b]` / `prefixos: []`) em vez de bloco — bloco vazio
+// (`prefixos:\n` sem itens embaixo) parseia como `null`, não `[]`, e faz o zod
+// (`prefixos` tipado como array) rejeitar a máscara inteira; com o array vazio "sumindo"
+// silenciosamente em `loadLibrary` (try/catch → `masks = []`), um teste de máscara SEM
+// prefixos passaria por acidente mesmo com a lógica errada (nenhuma máscara carregada =
+// nenhum alvo, nenhum semArquivos, o mesmo resultado esperado por coincidência).
 const FRONTMATTER_MASCARA = (id: string, prefixos: string[]) =>
-  `---\nid: ${id}\nmodalidade: tc\nnome: Máscara ${id}\nprefixos:\n${prefixos.map((p) => `  - ${p}`).join('\n')}\n---\ncorpo\n`;
+  `---\nid: ${id}\nmodalidade: tc\nnome: Máscara ${id}\nprefixos: [${prefixos.join(', ')}]\n---\ncorpo\n`;
 
 describe('montarAlvosReaprender', () => {
   let masksDir: string;
@@ -169,7 +175,7 @@ describe('montarAlvosReaprender', () => {
     expect(r.semArquivos).toEqual([{ maskId: 'abdome-tc', nome: 'Máscara abdome-tc' }]);
   });
 
-  it('máscara SEM prefixos configurados é ignorada (nem alvo, nem semArquivos)', () => {
+  it('máscara SEM prefixos configurados E sem nenhum laudo é ignorada (nem alvo, nem semArquivos)', () => {
     writeFileSync(join(masksDir, 'sem-prefixo.md'), FRONTMATTER_MASCARA('sem-prefixo', []), 'utf8');
     const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
 
@@ -177,6 +183,42 @@ describe('montarAlvosReaprender', () => {
 
     expect(r.alvos).toEqual([]);
     expect(r.semArquivos).toEqual([]);
+  });
+
+  // C1 (regressão obrigatória): TODA a biblioteca-base e as máscaras destiladas pelo wizard têm
+  // `prefixos: []` — antes do fix, `montarAlvosReaprender` as filtrava fora de cara
+  // (`masks.filter(m => m.prefixos.length > 0)`) e "Reaprender" sempre dizia "nenhum laudo",
+  // mesmo com o acervo cheio de arquivos `<id>_...` daquele exato maskId.
+  it('C1: máscara-base (prefixos: []) com arquivos no ACERVO nomeados <id>_... vira alvo (casamento por id, não só por prefixos)', () => {
+    writeFileSync(join(masksDir, 'abdome-tc.md'), FRONTMATTER_MASCARA('abdome-tc', []), 'utf8');
+    writeFileSync(join(acervoDir, 'abdome-tc_2026-01-01_001.md'), 'laudo do acervo 1', 'utf8');
+    writeFileSync(join(acervoDir, 'abdome-tc_2026-01-02_002.md'), 'laudo do acervo 2', 'utf8');
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    const r = montarAlvosReaprender(c);
+
+    expect(r.semArquivos).toEqual([]);
+    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos[0]).toMatchObject({ tipo: 'aprender', maskId: 'abdome-tc' });
+    expect(r.alvos[0]!.arquivos).toEqual([
+      join(acervoDir, 'abdome-tc_2026-01-01_001.md'),
+      join(acervoDir, 'abdome-tc_2026-01-02_002.md'),
+    ]);
+  });
+
+  // C1 (regressão obrigatória): máscara com prefixos: [] e ZERO arquivos no acervo, mas com
+  // edição no histórico — também precisa virar alvo (o histórico casa por maskId, não por prefixos).
+  it('C1: máscara-base (prefixos: []) com laudo só no HISTÓRICO EDITADO (sem nada no acervo) também vira alvo', () => {
+    writeFileSync(join(masksDir, 'torax-tc.md'), FRONTMATTER_MASCARA('torax-tc', []), 'utf8');
+    criarLaudo(outputDir, '2026-02-01_1000_torax-tc', { maskId: 'torax-tc', laudoFinalEditado: 'edição do médico' });
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    const r = montarAlvosReaprender(c);
+
+    expect(r.semArquivos).toEqual([]);
+    expect(r.alvos).toHaveLength(1);
+    expect(r.alvos[0]).toMatchObject({ tipo: 'aprender', maskId: 'torax-tc' });
+    expect(r.alvos[0]!.arquivos).toHaveLength(1);
   });
 
   it('acervoDir inexistente não quebra — histórico sozinho já monta o alvo', () => {
@@ -188,6 +230,47 @@ describe('montarAlvosReaprender', () => {
 
     expect(r.alvos).toHaveLength(1);
     expect(r.alvos[0]!.arquivos).toHaveLength(1);
+  });
+});
+
+describe('rodarAprendizado — alvo "destilar" grava prefixos (C1)', () => {
+  let masksDir: string;
+  let baseDir: string;
+  let acervoDir: string;
+  let outputDir: string;
+  let corpusDir: string;
+
+  beforeEach(() => {
+    masksDir = mkdtempSync(join(tmpdir(), 'aerolince-destilar-medico-'));
+    baseDir = mkdtempSync(join(tmpdir(), 'aerolince-destilar-base-'));
+    acervoDir = mkdtempSync(join(tmpdir(), 'aerolince-destilar-acervo-'));
+    outputDir = mkdtempSync(join(tmpdir(), 'aerolince-destilar-output-'));
+    corpusDir = mkdtempSync(join(tmpdir(), 'aerolince-destilar-corpus-'));
+    vi.stubEnv('OPENAI_API_KEY', 'sk-fake');
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-fake');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    for (const d of [masksDir, baseDir, acervoDir, outputDir, corpusDir]) rmSync(d, { recursive: true, force: true });
+  });
+
+  it('passa prefixos: [maskId] para destilarMascara — frontmatter do rascunho não sai vazio', async () => {
+    const arquivo = join(corpusDir, 'exame-novo_2026-01-01_001.md');
+    writeFileSync(arquivo, 'laudo de exemplo para destilar', 'utf8');
+    const c = cfg({ masksDir, outputDir, bibliotecaBaseDir: baseDir, acervoDir });
+
+    let userRecebidoPeloLlm = '';
+    llmFake.handler = async (params) => {
+      userRecebidoPeloLlm = params.user;
+      return { text: '## Máscara\n\nconteúdo', usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    };
+
+    const alvo = { tipo: 'destilar' as const, chave: 'exame-novo', maskId: 'exame-novo', arquivos: [arquivo] };
+    const r = await rodarAprendizado([alvo], c);
+
+    expect(r.falhas).toEqual([]);
+    expect(userRecebidoPeloLlm).toContain('prefixos: [exame-novo]');
   });
 });
 

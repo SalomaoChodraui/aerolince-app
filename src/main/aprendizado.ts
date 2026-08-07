@@ -134,7 +134,15 @@ export async function rodarAprendizado(
       try {
         const r =
           alvo.tipo === 'destilar'
-            ? await destilarMascara({ id: alvo.maskId, arquivos: alvo.arquivos, masksDir: config.masksDir }, opts)
+            ? // `prefixos: [alvo.maskId]` — os arquivos do acervo deste cluster são gravados como
+              // `<maskId>_<data>_<nnn>.md` (ver `sanitizarParaAcervo`), então o próprio maskId É o
+              // prefixo correto; sem isso o frontmatter `prefixos:` da máscara destilada saía
+              // vazio e `montarAlvosReaprender`/o `laudo aprender` da CLI nunca achavam este
+              // cluster de novo pelo acervo (C1).
+              await destilarMascara(
+                { id: alvo.maskId, arquivos: alvo.arquivos, masksDir: config.masksDir, prefixos: [alvo.maskId] },
+                opts,
+              )
             : await aprenderRegras({ maskId: alvo.maskId, arquivos: alvo.arquivos, masksDir: config.masksDir }, opts);
         ok.push({ chave: alvo.chave, arquivo: r.arquivo, custoUSD: r.custoUSD ?? 0 });
       } catch (err) {
@@ -373,15 +381,27 @@ export interface ResumoReaprender {
 
 /**
  * Monta os alvos do botão "Reaprender com meus laudos" (janela Meu Estilo):
- * para cada máscara com `prefixos` configurados, junta os laudos já
- * sanitizados no ACERVO (`corpusPorPrefixos`, mesmo mecanismo do `laudo
- * aprender todos` da CLI) com os do HISTÓRICO EDITADO (`corpusDoHistorico`)
- * que pertencem à mesma máscara. O histórico entra no FIM da lista — como o
- * cap de `corpusPorArquivos` corta pelo INÍCIO (`slice(-cap)`), a edição do
- * médico tem prioridade sobre o acervo mais antigo quando o total excede o
- * cap (peso de recência). Só gera alvos `'aprender'` (fraseado de máscaras
- * já existentes) — "Reaprender" refina o estilo, não descobre máscaras novas
- * (isso é o wizard normal de importação). Sem chamada de LLM.
+ * para CADA máscara da biblioteca (base + médico), junta os laudos já
+ * sanitizados no ACERVO (`corpusPorPrefixos`, casando por `[m.id, ...m.prefixos]`
+ * — não só `m.prefixos`) com os do HISTÓRICO EDITADO (`corpusDoHistorico`) que
+ * pertencem à mesma máscara (por `maskId`, sempre). Casar por `m.id` também é
+ * essencial (C1): TODA a biblioteca-base e as máscaras destiladas pelo wizard
+ * têm `prefixos: []`, mas os arquivos do acervo de um cluster são gravados como
+ * `<maskId>_<data>_<nnn>.md` — sem casar pelo id, "Reaprender" nunca achava
+ * esses laudos e sempre dizia "nenhum laudo".
+ *
+ * O histórico entra no FIM da lista — como o cap de `corpusPorArquivos` corta
+ * pelo INÍCIO (`slice(-cap)`), a edição do médico tem prioridade sobre o
+ * acervo mais antigo quando o total excede o cap (peso de recência). Só gera
+ * alvos `'aprender'` (fraseado de máscaras já existentes) — "Reaprender"
+ * refina o estilo, não descobre máscaras novas (isso é o wizard normal de
+ * importação). Sem chamada de LLM.
+ *
+ * `semArquivos` só lista máscaras com `prefixos` EXPLICITAMENTE configurados
+ * (sinal de que o médico esperava aprendizado ali) e mesmo assim sem nenhum
+ * laudo — uma máscara-base qualquer com `prefixos: []` e zero dados (acervo
+ * nem histórico) é simplesmente omitida, para não inflar a lista de "ficam de
+ * fora" com toda máscara nunca usada da biblioteca.
  */
 export function montarAlvosReaprender(config: Config, capHistorico = 40): ResumoReaprender {
   let masks: ReturnType<typeof loadLibrary> = [];
@@ -390,7 +410,6 @@ export function montarAlvosReaprender(config: Config, capHistorico = 40): Resumo
   } catch {
     masks = [];
   }
-  const comPrefixos = masks.filter((m) => m.prefixos.length > 0);
   const historico = corpusDoHistorico(config.outputDir, capHistorico);
   const historicoPorMask = new Map<string, string[]>();
   for (const h of historico) {
@@ -402,13 +421,14 @@ export function montarAlvosReaprender(config: Config, capHistorico = 40): Resumo
   const CAP_POR_MASCARA = 60; // mesmo cap do `laudo aprender todos` da CLI (corpus.ts)
   const alvos: AlvoAprendizado[] = [];
   const semArquivos: ResumoReaprender['semArquivos'] = [];
-  for (const m of comPrefixos) {
+  for (const m of masks) {
+    const prefixosParaCasar = [...new Set([m.id, ...m.prefixos])];
     const doAcervo = existsSync(config.acervoDir)
-      ? corpusPorPrefixos(config.acervoDir, m.prefixos, CAP_POR_MASCARA, { contendo: m.corpus_contendo, sem: m.corpus_sem })
+      ? corpusPorPrefixos(config.acervoDir, prefixosParaCasar, CAP_POR_MASCARA, { contendo: m.corpus_contendo, sem: m.corpus_sem })
       : [];
     const doHistorico = historicoPorMask.get(m.id) ?? [];
     if (doAcervo.length === 0 && doHistorico.length === 0) {
-      semArquivos.push({ maskId: m.id, nome: m.nome });
+      if (m.prefixos.length > 0) semArquivos.push({ maskId: m.id, nome: m.nome });
       continue;
     }
     // Cap final pelo MESMO `corpusPorArquivos` do resto do pipeline (`.slice(-cap)`):
