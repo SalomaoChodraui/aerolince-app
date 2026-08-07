@@ -263,6 +263,13 @@ async function gerarLaudo(
     versions: [gen.reportRaw],
   };
 
+  const custoSel = sel.usage ? estimateCostUSD(config.llm.selectionModel, sel.usage) : 0;
+  const custoGer = estimateCostUSD(config.llm.generationModel, gen.usage);
+  const avisosCusto =
+    custoSel === null || custoGer === null
+      ? ['custo não estimado — o modelo configurado não está na tabela de preços']
+      : [];
+
   return {
     tipo: 'laudo',
     report: gen.report,
@@ -271,18 +278,13 @@ async function gerarLaudo(
     maskNome: sel.mask.nome,
     confianca: sel.confianca,
     blocosAlterados: gen.diff.changed,
-    avisos: [...avisosSanitizacao, ...gen.avisos],
+    avisos: [...avisosSanitizacao, ...gen.avisos, ...avisosCusto],
     tempos: {
       sttMs: Math.round(sttMs),
       selecaoMs: Math.round(sel.durationMs),
       geracaoMs: Math.round(gen.durationMs),
     },
-    custoUSD: Number(
-      (
-        (sel.usage ? estimateCostUSD(config.llm.selectionModel, sel.usage) : 0) +
-        estimateCostUSD(config.llm.generationModel, gen.usage)
-      ).toFixed(4),
-    ),
+    custoUSD: Number(((custoSel ?? 0) + (custoGer ?? 0)).toFixed(4)),
   };
 }
 
@@ -305,6 +307,7 @@ async function refinarTranscript(command: string, sttMs: number): Promise<Result
     regras: sessao.regras,
   });
   sessao.versions.push(gen.reportRaw);
+  const custoRef = estimateCostUSD(config.llm.generationModel, gen.usage);
   return {
     tipo: 'laudo',
     report: gen.report,
@@ -313,9 +316,13 @@ async function refinarTranscript(command: string, sttMs: number): Promise<Result
     maskNome: sessao.mask.nome,
     confianca: 'refino',
     blocosAlterados: gen.diff.changed,
-    avisos: [...san.avisos, ...gen.avisos],
+    avisos: [
+      ...san.avisos,
+      ...gen.avisos,
+      ...(custoRef === null ? ['custo não estimado — o modelo configurado não está na tabela de preços'] : []),
+    ],
     tempos: { sttMs: Math.round(sttMs), selecaoMs: 0, geracaoMs: Math.round(gen.durationMs) },
-    custoUSD: Number(estimateCostUSD(config.llm.generationModel, gen.usage).toFixed(4)),
+    custoUSD: Number((custoRef ?? 0).toFixed(4)),
   };
 }
 

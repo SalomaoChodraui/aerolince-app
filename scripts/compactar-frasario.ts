@@ -48,7 +48,7 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
     maxTokens: 8000,
   });
   const custo = estimateCostUSD(config.llm.generationModel, r.usage);
-  total += custo;
+  if (custo !== null) total += custo;
   renameSync(path, join(originais, f));
   const fm = Object.entries(data)
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? `[${v.join(', ')}]` : JSON.stringify(v)}`)
@@ -59,6 +59,8 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
     'utf8',
   );
   const novoKb = statSync(path).size / 1024;
-  console.log(`→ ${novoKb.toFixed(0)} KB (US$ ${custo.toFixed(3)}) — original em _originais/`);
+  console.log(
+    `→ ${novoKb.toFixed(0)} KB (${custo === null ? 'custo não estimado' : `US$ ${custo.toFixed(3)}`}) — original em _originais/`,
+  );
 }
 console.log(`\nCusto total da compactação: US$ ${total.toFixed(2)}`);

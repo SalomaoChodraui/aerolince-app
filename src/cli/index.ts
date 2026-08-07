@@ -104,7 +104,7 @@ async function runPipeline(opts: {
   // Seleção da máscara
   let mask = opts.maskId ? getMask(masks, opts.maskId) : undefined;
   let selMs = 0;
-  let selCost = 0;
+  let selCost: number | null = 0;
   let confianca = 'manual';
   if (!mask) {
     const local = matchLocal(transcript, masks);
@@ -181,6 +181,7 @@ async function runPipeline(opts: {
   });
   console.log(fmt(gen.durationMs));
   const genCost = estimateCostUSD(genModel, gen.usage);
+  const custoNaoEstimado = selCost === null || genCost === null;
 
   // Saída
   console.log('\n' + '─'.repeat(72) + '\n' + gen.report + '\n' + '─'.repeat(72));
@@ -190,8 +191,9 @@ async function runPipeline(opts: {
   );
   const totalMs = sttMs + selMs + gen.durationMs;
   console.log(
-    `Tempo total: ${fmt(totalMs)} (stt ${fmt(sttMs)} + seleção ${fmt(selMs)} + geração ${fmt(gen.durationMs)}) | custo LLM ≈ US$ ${(selCost + genCost).toFixed(4)}`,
+    `Tempo total: ${fmt(totalMs)} (stt ${fmt(sttMs)} + seleção ${fmt(selMs)} + geração ${fmt(gen.durationMs)}) | custo LLM ${custoNaoEstimado ? 'não estimado (modelo fora da tabela)' : `≈ US$ ${((selCost ?? 0) + (genCost ?? 0)).toFixed(4)}`}`,
   );
+  if (custoNaoEstimado) console.warn('⚠️  custo não estimado — o modelo configurado não está na tabela de preços');
 
   await copyToClipboard(gen.report);
   console.log('✓ Copiado para a área de transferência');
@@ -203,7 +205,7 @@ async function runPipeline(opts: {
     modelo: genModel,
     confianca,
     latenciasMs: { stt: Math.round(sttMs), selecao: Math.round(selMs), geracao: Math.round(gen.durationMs) },
-    custoUSD: Number((selCost + genCost).toFixed(4)),
+    custoUSD: Number(((selCost ?? 0) + (genCost ?? 0)).toFixed(4)),
     blocosAlterados: gen.diff.changed,
   });
   console.log(`✓ Salvo em ${saved}`);
@@ -295,7 +297,10 @@ async function aprender(target: string) {
       user: `Tipo de exame: ${id}\n\n${corpus}`,
       maxTokens: 4000,
     });
-    console.log(`${fmt(performance.now() - t0)} (custo ≈ US$ ${estimateCostUSD(config.llm.generationModel, r.usage).toFixed(3)})`);
+    const custoAprender = estimateCostUSD(config.llm.generationModel, r.usage);
+    console.log(
+      `${fmt(performance.now() - t0)} (custo ${custoAprender === null ? 'não estimado' : `≈ US$ ${custoAprender.toFixed(3)}`})`,
+    );
     const out = join(regrasDir, `${id}.md`);
     writeFileSync(
       out,
@@ -329,7 +334,10 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
     user: `id: ${id}\nprefixos: [${prefixos.join(', ')}]\n\n${corpus}`,
     maxTokens: 2500,
   });
-  console.log(`${fmt(performance.now() - t0)} (custo ≈ US$ ${estimateCostUSD(config.llm.generationModel, r.usage).toFixed(3)})`);
+  const custoDestilar = estimateCostUSD(config.llm.generationModel, r.usage);
+  console.log(
+    `${fmt(performance.now() - t0)} (custo ${custoDestilar === null ? 'não estimado' : `≈ US$ ${custoDestilar.toFixed(3)}`})`,
+  );
   const dir = join(config.masksDir, '_rascunhos');
   mkdirSync(dir, { recursive: true });
   const out = join(dir, `${id}.md`);

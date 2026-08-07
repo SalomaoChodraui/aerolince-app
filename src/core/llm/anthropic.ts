@@ -65,18 +65,27 @@ export class LLMClient implements LLMProvider {
   }
 }
 
-/** Estimativa de custo em USD (preços por MTok; atualizar se a tabela mudar). */
-export function estimateCostUSD(model: string, usage: LLMUsage): number {
+/**
+ * Estimativa de custo em USD (preços por MTok; atualizar se a tabela mudar).
+ * ATENÇÃO: o match é por prefixo — prefixos mais específicos vêm ANTES
+ * ('gpt-5-mini' antes de 'gpt-5'). Modelo fora da tabela → null (o chamador
+ * mostra "custo não estimado"; nunca 0 silencioso).
+ */
+export function estimateCostUSD(model: string, usage: LLMUsage): number | null {
   const prices: Record<string, [number, number]> = {
     'claude-haiku-4-5': [1, 5],
     'claude-sonnet-5': [3, 15],
     // Moonshot/Kimi K2 — aproximado; conferir a tabela vigente em platform.moonshot.ai
     'kimi-': [0.6, 2.5],
+    // OpenAI GPT-5 (BYOK modo provedor único) — cached input = 0,1× (cobre o termo cacheRead)
+    'gpt-5-nano': [0.05, 0.4],
+    'gpt-5-mini': [0.25, 2],
+    'gpt-5': [1.25, 10],
   };
   const key = Object.keys(prices).find((k) => model.startsWith(k));
-  if (!key) return 0;
+  if (!key) return null;
   const [inP, outP] = prices[key]!;
-  // Cache: escrita custa 1,25× o input; leitura custa 0,1×
+  // Cache: escrita custa 1,25× o input; leitura custa 0,1× (OpenAI não tem cacheWrite — termo zera)
   return (
     (usage.inputTokens * inP +
       usage.cacheWriteTokens * inP * 1.25 +
