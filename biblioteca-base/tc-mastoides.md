@@ -19,7 +19,7 @@ Realizado estudo helicoidal de alta resolução dos ossos temporais, sem injeç�
 Análise:
 
 <!-- orgao: mastoides -->
-Células das mastoides bem pneumatizadas e aeradas bilateralmente.
+Células das mastoides bem pneumatizadas e sem velamentos bilateralmente.
 
 <!-- orgao: caixa-timpanica -->
 Caixas timpânicas livres, sem conteúdo anômalo.

@@ -25,7 +25,7 @@ Vértebras lombares com alinhamento e altura dos corpos preservados, sem traços
 Pedículos e demais elementos dos arcos posteriores de aspecto conservado.
 
 <!-- orgao: discos -->
-Espaços discais de amplitude conservada, sem herniações caracterizáveis ao método.
+Espaços discais de altura preservada, sem herniações caracterizáveis ao método.
 
 <!-- orgao: interapofisarias -->
 Articulações interapofisárias sem alterações degenerativas significativas.

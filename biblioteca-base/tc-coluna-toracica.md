@@ -25,7 +25,7 @@ Corpos vertebrais com altura e alinhamento preservados, sem traços de fratura.
 Pedículos e demais elementos dos arcos posteriores de aspecto conservado.
 
 <!-- orgao: discos-intervertebrais -->
-Espaços discais de amplitude conservada, sem herniações caracterizáveis ao método.
+Espaços discais de altura preservada, sem herniações caracterizáveis ao método.
 
 <!-- orgao: interapofisarias -->
 Articulações interapofisárias sem alterações degenerativas significativas.

@@ -15,7 +15,10 @@ O aplicativo carrega as máscaras em DUAS camadas, nesta ordem de precedência:
 - Máscara com o MESMO `id` na biblioteca do radiologista substitui a da base por inteiro.
 - `regras/gerais.md` do radiologista substitui o desta pasta por inteiro.
 - Frasário: os arquivos das duas camadas são somados; arquivo com o mesmo NOME na
-  biblioteca do radiologista substitui o homônimo da base.
+  biblioteca do radiologista substitui o homônimo da base. Além disso, arquivo de
+  frasário da base com conteúdo IDÊNTICO ao de um arquivo da biblioteca do
+  radiologista é pulado automaticamente (deduplicação por conteúdo), mesmo que os
+  nomes sejam diferentes.
 
 ## Onde editar
 
