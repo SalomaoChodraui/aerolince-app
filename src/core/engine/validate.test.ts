@@ -41,4 +41,38 @@ describe('validarLaudo', () => {
     expect(v.erros).toEqual([]);
     expect(v.avisos.length).toBe(1);
   });
+
+  it('bloqueia a nota de processo do defeito de campo (linha literal)', () => {
+    const v = validarLaudo(`${LAUDO_OK}\n(bloco removido — não é achado abdominal/pélvico)`);
+    expect(v.erros.length).toBeGreaterThan(0);
+    expect(v.erros.join(' ')).toMatch(/nota de processo/);
+  });
+
+  it('bloqueia vocabulário de sistema entre parênteses e frases de processo', () => {
+    expect(validarLaudo(`${LAUDO_OK}\n(não se aplica a este exame)`).erros.length).toBeGreaterThan(0);
+    expect(validarLaudo(`${LAUDO_OK}\n(placeholder da máscara)`).erros.length).toBeGreaterThan(0);
+    expect(validarLaudo(`${LAUDO_OK}\nTrecho removido pelo sistema.`).erros.length).toBeGreaterThan(0);
+  });
+
+  it('NÃO bloqueia laudo com parênteses clínicos legítimos (falso positivo)', () => {
+    const laudo = `TOMOGRAFIA COMPUTADORIZADA DE ABDOME E PELVE
+
+Técnica:
+
+Imagens volumétricas obtidas sem contraste intravenoso.
+
+Análise:
+
+Fígado com atenuação difusamente reduzida; nódulo hepático referido não identificado (não caracterizado).
+Cisto renal simples à esquerda (Bosniak II), medindo 1,8 cm, estável (vide comparativo).
+Divertículos no cólon sigmoide (sem sinais de complicação).
+Discreta dilatação do colédoco (0,9 cm), habitual pós-colecistectomia.
+Linfonodos mesentéricos de aspecto reacional (o maior com 0,8 cm no menor eixo).
+
+Conclusão:
+
+Achados acima descritos (sem sinais de complicação aguda).`;
+    const v = validarLaudo(laudo);
+    expect(v.erros).toEqual([]);
+  });
 });
