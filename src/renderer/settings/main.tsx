@@ -274,6 +274,23 @@ function App() {
               }}
             />
           </div>
+          <div className="linha">
+            <div>
+              <div className="rot">Sensibilidade do microfone</div>
+              <div className="desc">
+                Alta: capta voz baixa ou microfone distante (pode pegar ruído). Média: padrão. Baixa: ambiente ruidoso.
+              </div>
+            </div>
+            <select
+              className="ctrl"
+              value={cfg.stt.sensibilidadeVad}
+              onChange={(e) => patchStt({ sensibilidadeVad: e.target.value as RendererConfig['stt']['sensibilidadeVad'] })}
+            >
+              <option value="alta">Alta (voz baixa / mic distante)</option>
+              <option value="media">Média (padrão)</option>
+              <option value="baixa">Baixa (ambiente ruidoso)</option>
+            </select>
+          </div>
           <div className="desc" style={{ padding: '4px 14px' }}>
             Na captura segmentada, só os trechos com fala são enviados para transcrição.
           </div>
