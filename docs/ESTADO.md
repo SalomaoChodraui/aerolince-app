@@ -160,6 +160,11 @@ plano em `docs/superpowers/plans/2026-08-07-bloco2-biblioteca-base.md`), branch 
   base; camada ausente/vazia não derruba; zero máscaras no total lança erro. `loadRegras`
   resolve regras POR ARQUIVO (médico vence) e frasário por UNIÃO com dedup por conteúdo (mesmo
   nome de arquivo ou mesmo prompt já presente na biblioteca do médico não duplica).
+  Nota (fragilidade triada no review final): o dedup do frasário é por conteúdo EXATO — se o
+  médico EDITAR um arquivo seu que era idêntico a um da base, a cópia da base volta a aparecer
+  (caveat documentado em `biblioteca-base/LEIA-ME.md`, com a saída: dar ao arquivo do médico o
+  MESMO NOME do da base). Detecção de quase-duplicata (fuzzy, tolerando pequenas edições) fica
+  para o Bloco 3.
 - **Config `bibliotecaBaseDir`**: novo campo (default `app/biblioteca-base` em dev/CLI,
   `resourcesPath/biblioteca-base` no empacotado). `origem: 'base'` no schema de máscara.
 - **Bootstrap novo + self-heal**: instalação limpa (empacotado, sem config) nasce com
@@ -214,6 +219,12 @@ mesmas 18, todas com `(base)`.
       Nota: instalação nova (empacotada) usa `userData/biblioteca-medico` como `masksDir`
       inicial (vazio); dev/CLI usa `../biblioteca-mascaras` — caminhos diferentes por design
       (isolamento por usuário vs biblioteca de desenvolvimento compartilhada).
+- [ ] **Smoke de instalação empacotada ANTIGA com `masksDir` em `masks-exemplo`** — já houve em
+      campo uma instalação (18/07, ver "Fixes de campo pós-instalador" acima) cujo `masksDir`
+      apontava para uma cópia de `masks-exemplo/`. Com as camadas do Bloco 2, esse cenário deixa
+      de falhar silenciosamente ("não tive certeza") e passa a somar 18 máscaras da base + as de
+      `masks-exemplo` no catálogo — conferir se essa instalação (ou outra parecida) ainda existe
+      e, se achar, re-apontar o `masksDir` para a biblioteca real do médico.
 
 ## Backlog priorizado (próximas frentes)
 
@@ -259,4 +270,3 @@ mesmas 18, todas com `(base)`.
   regra permanente (no prompt ou em `regras/`) + caso de teste. Foi assim com pleura, Bosniak,
   líquido livre, ordem canônica.
 - Plano original e decisões: `docs/decisoes.md`. Concorrência e posicionamento: lá também.
-```

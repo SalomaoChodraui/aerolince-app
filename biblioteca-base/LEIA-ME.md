@@ -19,6 +19,11 @@ O aplicativo carrega as máscaras em DUAS camadas, nesta ordem de precedência:
   frasário da base com conteúdo IDÊNTICO ao de um arquivo da biblioteca do
   radiologista é pulado automaticamente (deduplicação por conteúdo), mesmo que os
   nomes sejam diferentes.
+  **Cuidado:** essa dedup é por conteúdo exato, não por "parentesco". Se você EDITAR um
+  arquivo de frasário seu que antes era idêntico a um da base, a cópia da base volta a
+  entrar (o conteúdo mudou, deixou de ser idêntico). Para suprimir a cópia da base de
+  vez, crie na SUA pasta `frasario/` um arquivo com o MESMO NOME do arquivo da base
+  correspondente — nomes iguais vencem por nome, independente do conteúdo.
 
 ## Onde editar
 
