@@ -24,6 +24,13 @@ export interface HistoricoConfig {
   retencaoDias: number;
 }
 
+export interface LlmConfig {
+  provider: 'anthropic' | 'openai';
+  selectionModel: string;
+  generationModel: string;
+  fastModel: string;
+}
+
 export interface RendererConfig {
   masksDir: string;
   profilesDir: string;
@@ -33,5 +40,6 @@ export interface RendererConfig {
   ui: UIConfig;
   macros: Macro[];
   stt: SttConfig;
+  llm: LlmConfig;
   historico: HistoricoConfig;
 }

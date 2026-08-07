@@ -35,6 +35,9 @@ export const ConfigSchema = z.object({
     pausaMs: z.number().int().min(400).max(5000).default(1200), // silêncio que fecha um trecho de fala
   }),
   llm: z.object({
+    // Motor de geração: 'anthropic' (padrão — Claude gera, OpenAI transcreve) ou
+    // 'openai' (provedor único: uma chave só para voz e laudos)
+    provider: z.enum(['anthropic', 'openai']).default('anthropic'),
     selectionModel: z.string().default('claude-haiku-4-5'),
     // Haiku por padrão (modo patch tornou a tarefa de edição leve); para "modo
     // qualidade" com Sonnet: laudo.config.json {"llm":{"generationModel":"claude-sonnet-5"}}
