@@ -171,6 +171,107 @@ describe('achado-adicional (achado fora da região do exame)', () => {
   });
 });
 
+describe('indicacao (seção ditável, logo após a Técnica)', () => {
+  const SECAO = '<!-- orgao: indicacao -->\nIndicação:\nDor em fossa ilíaca direita.';
+
+  it('insere imediatamente antes de "Análise:" (depois da Técnica)', () => {
+    const out = applyPatches(MASK, parsePatches('@@ indicacao\nDor em fossa ilíaca direita.'));
+    expect(out).toContain(`Foram obtidas imagens por aquisição volumétrica.\n\n${SECAO}\n\nAnálise:`);
+  });
+
+  it('idempotente: ditar de novo ATUALIZA a seção, não duplica', () => {
+    const laudo1 = applyPatches(MASK, parsePatches('@@ indicacao\nDor em fossa ilíaca direita.'));
+    const laudo2 = applyPatches(laudo1, parsePatches('@@ indicacao\nDor lombar à esquerda.'));
+    expect(laudo2.match(/Indicação:/g)).toHaveLength(1);
+    expect(laudo2).toContain('Indicação:\nDor lombar à esquerda.\n\nAnálise:');
+    expect(laudo2).not.toContain('fossa ilíaca');
+  });
+
+  it('texto não patcheado segue byte-idêntico à máscara', () => {
+    const out = applyPatches(MASK, parsePatches('@@ indicacao\nDor em fossa ilíaca direita.'));
+    expect(out.replace(`${SECAO}\n\n`, '')).toBe(MASK);
+  });
+
+  it('entra em patchedIds como "indicacao"', () => {
+    expect(patchedIds(parsePatches('@@ indicacao\nDor abdominal.'))).toEqual(['indicacao']);
+  });
+
+  it('rótulo repetido pelo modelo no corpo não duplica ("Indicação: dor…")', () => {
+    const out = applyPatches(MASK, parsePatches('@@ indicacao\nIndicação: dor abdominal.'));
+    expect(out).toContain('Indicação:\ndor abdominal.');
+    expect(out.match(/Indicação:/g)).toHaveLength(1);
+  });
+
+  it('tolera "@@ substituir: indicacao" (marcador visível no refino)', () => {
+    const laudo1 = applyPatches(MASK, parsePatches('@@ indicacao\nDor abdominal.'));
+    const laudo2 = applyPatches(laudo1, parsePatches('@@ substituir: indicacao\nCefaleia súbita.'));
+    expect(laudo2).toContain('Indicação:\nCefaleia súbita.');
+    expect(laudo2.match(/Indicação:/g)).toHaveLength(1);
+  });
+
+  it('máscara sem linha de Análise (degenerado): acrescenta ao final', () => {
+    const out = applyPatches('Corpo qualquer.', parsePatches('@@ indicacao\nDor abdominal.'));
+    expect(out.endsWith('<!-- orgao: indicacao -->\nIndicação:\nDor abdominal.')).toBe(true);
+  });
+
+  it('indicacao sem texto lança PatchError', () => {
+    expect(() => parsePatches('@@ indicacao\n')).toThrow(PatchError);
+  });
+});
+
+describe('observacao (seção ditável, ao final do laudo)', () => {
+  const SECAO = '<!-- orgao: observacao -->\nObservação:\nCorrelacionar com dados clínicos.';
+
+  it('acrescenta ao FINAL do laudo (depois da conclusão)', () => {
+    const out = applyPatches(MASK, parsePatches('@@ observacao\nCorrelacionar com dados clínicos.'));
+    expect(out.endsWith(`Exame sem alterações significativas.\n\n${SECAO}`)).toBe(true);
+  });
+
+  it('idempotente: ditar de novo ATUALIZA a seção, não duplica', () => {
+    const laudo1 = applyPatches(MASK, parsePatches('@@ observacao\nCorrelacionar com dados clínicos.'));
+    const laudo2 = applyPatches(laudo1, parsePatches('@@ observacao\nControle evolutivo em 6 meses.'));
+    expect(laudo2.match(/Observação:/g)).toHaveLength(1);
+    expect(laudo2.endsWith('Observação:\nControle evolutivo em 6 meses.')).toBe(true);
+  });
+
+  it('texto não patcheado segue byte-idêntico à máscara', () => {
+    const out = applyPatches(MASK, parsePatches('@@ observacao\nCorrelacionar com dados clínicos.'));
+    expect(out.replace(`\n\n${SECAO}`, '')).toBe(MASK);
+  });
+
+  it('entra em patchedIds como "observacao"', () => {
+    expect(patchedIds(parsePatches('@@ observacao\nControle em 6 meses.'))).toEqual(['observacao']);
+  });
+
+  it('tolera "@@ nota" (como o médico chama no crânio)', () => {
+    const out = applyPatches(MASK_OPINIAO, parsePatches('@@ nota\nControle evolutivo em 6 meses.'));
+    expect(out.endsWith('<!-- orgao: observacao -->\nObservação:\nControle evolutivo em 6 meses.')).toBe(true);
+  });
+
+  it('rótulo "Nota:" repetido pelo modelo no corpo não vaza para o texto', () => {
+    const out = applyPatches(MASK, parsePatches('@@ observacao\nNota: controle em 6 meses.'));
+    expect(out).toContain('Observação:\ncontrole em 6 meses.');
+    expect(out).not.toContain('Nota:');
+  });
+
+  it('observacao sem texto lança PatchError', () => {
+    expect(() => parsePatches('@@ observacao\n')).toThrow(PatchError);
+  });
+
+  it('indicacao + observacao no mesmo patch: cada uma no seu lugar', () => {
+    const out = applyPatches(
+      MASK,
+      parsePatches('@@ indicacao\nTrauma de joelho.\n@@ observacao\nControle radiográfico.'),
+    );
+    expect(out.indexOf('Indicação:')).toBeLessThan(out.indexOf('Análise:'));
+    expect(out.endsWith('Observação:\nControle radiográfico.')).toBe(true);
+    expect(patchedIds(parsePatches('@@ indicacao\nT.\n@@ observacao\nC.'))).toEqual([
+      'indicacao',
+      'observacao',
+    ]);
+  });
+});
+
 describe('remover (bloco inteiro, sem buraco de formatação)', () => {
   it('remove marcador, texto e a linha em branco separadora', () => {
     const out = applyPatches(MASK, parsePatches('@@ remover: derrame'));

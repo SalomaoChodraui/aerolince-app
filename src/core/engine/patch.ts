@@ -18,6 +18,12 @@
  *   <frase do achado>         insere na seção "Achados adicionais" da Análise,
  *                             imediatamente antes de "Conclusão:"/"Opinião:" —
  *                             o rótulo é criado uma única vez)
+ *   @@ indicacao             (sem alvo: indicação clínica ditada; o motor cria/
+ *   <texto da indicação>      ATUALIZA a seção "Indicação:" logo após a Técnica,
+ *                             antes da Análise — idempotente, nunca duplica)
+ *   @@ observacao            (sem alvo: observação/nota final ditada; o motor
+ *   <texto da observação>     cria/ATUALIZA a seção "Observação:" ao FINAL do
+ *                             laudo, depois da conclusão — idempotente)
  *   @@ remover: <id>         (apaga o bloco inteiro — marcador, texto e a linha
  *                             em branco separadora; sem texto após o cabeçalho)
  *   @@ sem-alteracoes        (sozinho: exame normal, máscara sai intacta)
@@ -29,6 +35,8 @@ export interface PatchOp {
     | 'inserir-apos'
     | 'inserir-antes'
     | 'achado-adicional'
+    | 'indicacao'
+    | 'observacao'
     | 'remover'
     | 'titulo'
     | 'tecnica'
@@ -45,6 +53,14 @@ const HEADER_RE = /^@@\s*(.+?)\s*$/;
 /** Id e rótulo fixos da seção de achados fora da região do exame. */
 const ACHADOS_ADICIONAIS_ID = 'achados-adicionais';
 const ACHADOS_ADICIONAIS_ROTULO = 'Achados adicionais:';
+
+/** Ids e rótulos fixos das seções ditáveis Indicação/Observação. Os rótulos aqui
+ *  são os canônicos do reportRaw; a variante do médico (ex.: "Nota:" no crânio)
+ *  é aplicada na camada de SAÍDA (src/core/output/formatar.ts), nunca aqui. */
+const INDICACAO_ID = 'indicacao';
+const INDICACAO_ROTULO = 'Indicação:';
+const OBSERVACAO_ID = 'observacao';
+const OBSERVACAO_ROTULO = 'Observação:';
 
 const semAcento = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -85,14 +101,22 @@ export function parsePatches(raw: string): PatchOp[] {
     else if (semAcento(header) === 'achado-adicional' || semAcento(header) === 'achados-adicionais') {
       // Tolerância ao plural: o modelo às vezes usa o nome da seção como cabeçalho
       current = { tipo: 'achado-adicional', texto: '' };
+    } else if (semAcento(header) === 'indicacao') {
+      current = { tipo: 'indicacao', texto: '' };
+    } else if (semAcento(header) === 'observacao' || semAcento(header) === 'nota') {
+      // "nota" é como o médico chama a observação no crânio — mesmo destino
+      current = { tipo: 'observacao', texto: '' };
     } else if (header.startsWith('remover:')) {
       current = { tipo: 'remover', alvo: normalizarId(header.slice('remover:'.length).trim()), texto: '' };
     } else if (header.startsWith('substituir:')) {
       const alvo = header.slice('substituir:'.length).trim();
       const alvoN = semAcento(alvo);
-      // Tolerância: o modelo às vezes usa "substituir: tecnica/titulo" em vez do cabeçalho próprio
+      // Tolerância: o modelo às vezes usa "substituir: tecnica/titulo/indicacao/observacao"
+      // em vez do cabeçalho próprio (no refino, esses blocos têm marcador no laudo atual)
       if (alvoN === 'tecnica') current = { tipo: 'tecnica', texto: '' };
       else if (alvoN === 'titulo') current = { tipo: 'titulo', texto: '' };
+      else if (alvoN === 'indicacao') current = { tipo: 'indicacao', texto: '' };
+      else if (alvoN === 'observacao' || alvoN === 'nota') current = { tipo: 'observacao', texto: '' };
       else current = { tipo: 'substituir', alvo: normalizarId(alvo), texto: '' };
     } else if (header.startsWith('inserir-apos:') || header.startsWith('inserir-antes:')) {
       const tipo = header.startsWith('inserir-antes:') ? 'inserir-antes' : 'inserir-apos';
@@ -134,19 +158,24 @@ function blockRange(body: string, id: string): [number, number] | null {
   return [m.index, blank === -1 ? body.length : blank];
 }
 
-/**
- * Offset do início da linha que abre a conclusão ("Conclusão:" ou "Opinião:" —
- * o crânio usa Opinião; case/acento-insensível, com ou sem "##"), ou -1.
- */
-function inicioConclusao(body: string): number {
+/** Offset do início da primeira linha cujo texto normalizado casa com `re`, ou -1. */
+function inicioLinha(body: string, re: RegExp): number {
   let offset = 0;
   for (const line of body.split('\n')) {
-    const norm = semAcento(line.trim()).toLowerCase();
-    if (/^#{0,6}\s*(conclusao|opiniao):?$/.test(norm)) return offset;
+    if (re.test(semAcento(line.trim()).toLowerCase())) return offset;
     offset += line.length + 1;
   }
   return -1;
 }
+
+/**
+ * Offset do início da linha que abre a conclusão ("Conclusão:" ou "Opinião:" —
+ * o crânio usa Opinião; case/acento-insensível, com ou sem "##"), ou -1.
+ */
+const inicioConclusao = (body: string): number => inicioLinha(body, /^#{0,6}\s*(conclusao|opiniao):?$/);
+
+/** Offset da linha que abre a Análise ("Análise:"/"Achados:"), ou -1. */
+const inicioAnalise = (body: string): number => inicioLinha(body, /^#{0,6}\s*(analise|achados):?$/);
 
 export function applyPatches(maskBody: string, ops: PatchOp[]): string {
   let body = maskBody;
@@ -182,6 +211,30 @@ export function applyPatches(maskBody: string, ops: PatchOp[]): string {
           : `${body.slice(0, pos)}${secao}\n\n${body.slice(pos)}`;
       continue;
     }
+    if (op.tipo === 'indicacao' || op.tipo === 'observacao') {
+      const id = op.tipo === 'indicacao' ? INDICACAO_ID : OBSERVACAO_ID;
+      const rotulo = op.tipo === 'indicacao' ? INDICACAO_ROTULO : OBSERVACAO_ROTULO;
+      // O modelo às vezes repete o rótulo no corpo do patch — remove para não duplicar
+      const texto = op.texto.replace(/^(indica[cç][aã]o|observa[cç][aã]o|nota)\s*:\s*/i, '').trim() || op.texto;
+      const secao = `<!-- orgao: ${id} -->\n${rotulo}\n${texto}`;
+      const existente = blockRange(body, id);
+      if (existente) {
+        // Idempotência: ditar de novo ATUALIZA a seção existente (não duplica)
+        const [ini, fim] = existente;
+        body = body.slice(0, ini) + secao + body.slice(fim);
+      } else if (op.tipo === 'indicacao') {
+        // Logo após a Técnica: imediatamente antes da linha "Análise:"
+        const pos = inicioAnalise(body);
+        body =
+          pos === -1
+            ? `${body.replace(/\s+$/, '')}\n\n${secao}` // laudo sem linha de Análise (degenerado)
+            : `${body.slice(0, pos)}${secao}\n\n${body.slice(pos)}`;
+      } else {
+        // Observação: ao FINAL do laudo, depois da conclusão
+        body = `${body.replace(/\s+$/, '')}\n\n${secao}`;
+      }
+      continue;
+    }
     if (!op.alvo) throw new PatchError(`patch ${op.tipo} sem alvo`);
     const range = blockRange(body, op.alvo);
     if (!range) throw new PatchError(`bloco não encontrado na máscara: "${op.alvo}"`);
@@ -212,6 +265,8 @@ export function patchedIds(ops: PatchOp[]): string[] {
     .filter((o) => o.tipo !== 'sem-alteracoes' && o.tipo !== 'titulo' && o.tipo !== 'tecnica')
     .map((o) => {
       if (o.tipo === 'achado-adicional') return ACHADOS_ADICIONAIS_ID;
+      if (o.tipo === 'indicacao') return INDICACAO_ID;
+      if (o.tipo === 'observacao') return OBSERVACAO_ID;
       if (o.tipo === 'substituir' || o.tipo === 'remover') return o.alvo!;
       return o.novoId ?? 'novo';
     })
