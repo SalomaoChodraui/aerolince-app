@@ -91,6 +91,25 @@ describe('classificarDocumento', () => {
     expect(classificarDocumento(texto).contraste).toBe('sem');
   });
 
+  // Segunda variante real de Técnica na biblioteca-base: tc-cranio.md é a ÚNICA das 18
+  // máscaras que não diz "injeção" — diz "uso intravenoso" (ver linha abaixo, fraseado
+  // exato do arquivo real).
+  it('"após uso intravenoso do meio de contraste" → com contraste', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DE ABDOME TOTAL\n\nRealizado após uso intravenoso do meio de contraste.';
+    expect(classificarDocumento(texto).contraste).toBe('com');
+  });
+
+  it('fraseado real de tc-cranio.md ("sem uso intravenoso do meio de contraste iodado") → sem', () => {
+    const texto =
+      'TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO\n\nEstudo realizado em tomógrafo de múltiplos detectores, com cortes volumétricos, sem uso intravenoso do meio de contraste iodado.';
+    expect(classificarDocumento(texto).contraste).toBe('sem');
+  });
+
+  it('"sem o uso endovenoso do meio de contraste" → sem contraste (variante "endovenoso" + negação com artigo "o")', () => {
+    const texto = 'TOMOGRAFIA COMPUTADORIZADA DO CRÂNIO\n\nRealizado sem o uso endovenoso do meio de contraste.';
+    expect(classificarDocumento(texto).contraste).toBe('sem');
+  });
+
   it('rm de coluna lombar', () => {
     const texto = 'RESSONÂNCIA MAGNÉTICA DA COLUNA LOMBAR\n\nAlinhamento preservado.';
     expect(classificarDocumento(texto)).toEqual({
