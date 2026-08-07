@@ -26,6 +26,7 @@ import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
 import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import { AVISO_BIBLIOTECA_VAZIA, bibliotecasDe, buildCatalog, contarMascaras, getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
+import { formatarLaudo, prefsDoExame } from '../core/output/formatar.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
 import { sanitizeComando } from '../core/anonymizer/anonymizer.js';
 import { OpenAISTT } from '../core/stt/openai.js';
@@ -197,8 +198,9 @@ async function runPipeline(opts: {
   const genCost = estimateCostUSD(modeloGeracao, gen.usage);
   const custoNaoEstimado = selCost === null || genCost === null;
 
-  // Saída
-  console.log('\n' + '─'.repeat(72) + '\n' + gen.report + '\n' + '─'.repeat(72));
+  // Saída — mesma formatação que o app entrega (camada pós-stripMarkers)
+  const reportFinal = formatarLaudo(gen.report, prefsDoExame(config, mask.id));
+  console.log('\n' + '─'.repeat(72) + '\n' + reportFinal + '\n' + '─'.repeat(72));
   if (gen.avisos.length > 0) console.warn(`⚠️  ${gen.avisos.join(' | ')}`);
   console.log(
     `Blocos alterados: ${gen.diff.changed.join(', ') || 'nenhum'} | preservados: ${gen.diff.kept.length}`,
@@ -209,9 +211,9 @@ async function runPipeline(opts: {
   );
   if (custoNaoEstimado) console.warn('⚠️  custo não estimado — o modelo configurado não está na tabela de preços');
 
-  await copyToClipboard(gen.report);
+  await copyToClipboard(reportFinal);
   console.log('✓ Copiado para a área de transferência');
-  const saved = saveReport(config.outputDir, mask.id, gen.report);
+  const saved = saveReport(config.outputDir, mask.id, reportFinal);
   saveSidecar(saved, {
     transcript,
     maskId: mask.id,

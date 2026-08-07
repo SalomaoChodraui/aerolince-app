@@ -16,6 +16,7 @@ import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import type { LLMProvider } from '../core/llm/types.js';
 import type { LLMUsage } from '../core/llm/types.js';
 import { AVISO_BIBLIOTECA_VAZIA, bibliotecasDe, contarMascaras, getMask, loadLibrary } from '../core/masks/library.js';
+import { formatarLaudo, prefsDoExame } from '../core/output/formatar.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { Mask } from '../core/masks/schema.js';
 import { validarAudio } from '../core/stt/audio-guard.js';
@@ -38,7 +39,12 @@ export interface TelemetriaAudio {
 
 export interface ResultadoLaudo {
   tipo: 'laudo';
+  /** Texto ENTREGUE ao médico (janela/clipboard/.txt) — já com a formatação de
+   *  saída aplicada (formatarLaudo + prefs do exame). */
   report: string;
+  /** Texto ÍNTEGRO (sem marcadores, SEM formatação de saída) — vai ao sidecar:
+   *  nada ditado some dele, mesmo com seções desligadas na formatação. */
+  reportIntegro: string;
   transcript: string;
   maskId: string;
   maskNome: string;
@@ -316,7 +322,10 @@ async function gerarLaudo(
 
   return {
     tipo: 'laudo',
-    report: gen.report,
+    // Formatação de SAÍDA (camada pós-stripMarkers): o que o médico vê é o que
+    // ele cola. O reportRaw da sessão (refino/desfazer) segue íntegro.
+    report: formatarLaudo(gen.report, prefsDoExame(config, sel.mask.id)),
+    reportIntegro: gen.report,
     transcript,
     maskId: sel.mask.id,
     maskNome: sel.mask.nome,
@@ -355,7 +364,8 @@ async function refinarTranscript(command: string, sttMs: number): Promise<Result
   const custoRef = estimateCostUSD(modelos.geracao, gen.usage);
   return {
     tipo: 'laudo',
-    report: gen.report,
+    report: formatarLaudo(gen.report, prefsDoExame(config, sessao.mask.id)),
+    reportIntegro: gen.report,
     transcript: san.texto,
     maskId: sessao.mask.id,
     maskNome: sessao.mask.nome,
@@ -394,9 +404,11 @@ export function desfazer(): ResultadoLaudo | null {
   if (!sessao || sessao.versions.length < 2) return null;
   sessao.versions.pop();
   const raw = sessao.versions[sessao.versions.length - 1]!;
+  const integro = stripMarkers(raw);
   return {
     tipo: 'laudo',
-    report: stripMarkers(raw),
+    report: formatarLaudo(integro, prefsDoExame(getConfig(), sessao.mask.id)),
+    reportIntegro: integro,
     transcript: '(desfazer)',
     maskId: sessao.mask.id,
     maskNome: sessao.mask.nome,

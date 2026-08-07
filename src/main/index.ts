@@ -340,7 +340,9 @@ async function entregar(r: ResultadoLaudo): Promise<void> {
     latenciasMs: r.tempos,
     custoUSD: r.custoUSD,
     blocosAlterados: r.blocosAlterados,
-    laudoGerado: r.report,
+    // Conteúdo ÍNTEGRO (sem a formatação de saída): seções desligadas na
+    // formatação não somem do histórico/aprendizado.
+    laudoGerado: r.reportIntegro,
     // Só no ditado segmentado; ausente (undefined) nos demais fluxos — JSON omite.
     audio: r.audio,
     origem: 'app',
