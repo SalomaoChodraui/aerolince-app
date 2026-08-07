@@ -20,6 +20,7 @@ import { loadConfig } from '../core/config/schema.js';
 import { generate, selectMask } from '../core/engine/engine.js';
 import { APRENDER_SYSTEM, DESTILAR_SYSTEM } from '../core/engine/prompts.js';
 import { LLMClient, estimateCostUSD } from '../core/llm/anthropic.js';
+import { chavesNecessarias, criarLLM } from '../core/llm/factory.js';
 import { buildCatalog, getMask, loadLibrary } from '../core/masks/library.js';
 import { matchLocal, rankMasks } from '../core/masks/matcher.js';
 import { copyToClipboard, saveReport, saveSidecar } from '../core/output/output.js';
@@ -48,10 +49,13 @@ function loadMasks(config: ReturnType<typeof loadConfig>) {
 
 import { loadProfile, loadRegras } from '../core/contexto.js';
 
-function requireEnv(name: string): void {
-  if (!process.env[name]) {
+function requireEnv(names: string[]): void {
+  const faltando = names.filter((n) => !process.env[n]);
+  if (faltando.length > 0) {
     console.error(
-      `ERRO: variável ${name} não definida. Crie um arquivo .env na pasta app/ com:\n${name}=sua-chave-aqui`,
+      `ERRO: variável(is) ${faltando.join(', ')} não definida(s). Crie um arquivo .env na pasta app/ com:\n${faltando
+        .map((n) => `${n}=sua-chave-aqui`)
+        .join('\n')}`,
     );
     process.exit(1);
   }
@@ -76,7 +80,7 @@ async function runPipeline(opts: {
   let sttMs = 0;
 
   if (!transcript && opts.audioPath) {
-    requireEnv('OPENAI_API_KEY');
+    requireEnv(['OPENAI_API_KEY']);
     const stt = new OpenAISTT(config.stt.model, config.stt.glossario);
     process.stdout.write('Transcrevendo… ');
     const r = await stt.transcribe(opts.audioPath);
@@ -90,6 +94,8 @@ async function runPipeline(opts: {
   if (san.avisos.length > 0) console.warn(`⚠️  ${san.avisos.join(' | ')}`);
   transcript = san.texto;
 
+  requireEnv(chavesNecessarias(config));
+
   if (opts.dryRun) {
     console.log('=== DRY RUN (nenhuma chamada de API) ===');
     console.log(`Comando: "${transcript}"`);
@@ -98,8 +104,7 @@ async function runPipeline(opts: {
     return;
   }
 
-  requireEnv('ANTHROPIC_API_KEY');
-  const llm = new LLMClient();
+  const resolvido = criarLLM(config);
 
   // Seleção da máscara
   let mask = opts.maskId ? getMask(masks, opts.maskId) : undefined;
@@ -114,9 +119,9 @@ async function runPipeline(opts: {
     }
   }
   if (!mask) {
-    const sel = await selectMask(llm, config.llm.selectionModel, transcript, masks);
+    const sel = await selectMask(resolvido.llm, resolvido.modelos.selecao, transcript, masks);
     selMs = sel.durationMs;
-    selCost = estimateCostUSD(config.llm.selectionModel, sel.usage);
+    selCost = estimateCostUSD(resolvido.modelos.selecao, sel.usage);
     confianca = sel.confianca;
     if (!sel.mask || sel.confianca === 'baixa') {
       console.error(`\nNão tive certeza do exame (confiança: ${sel.confianca}).`);
@@ -153,34 +158,35 @@ async function runPipeline(opts: {
   console.log(`Máscara: ${mask.nome} [${mask.id}] (confiança: ${confianca}, ${fmt(selMs)})`);
 
   // Geração
-  const genModel = opts.kimi
-    ? config.llm.kimiModel
-    : opts.sonnet
-      ? 'claude-sonnet-5'
-      : opts.fast
-        ? config.llm.fastModel
-        : config.llm.generationModel;
-  let llmGen = llm;
+  let llm = resolvido.llm;
+  let modeloGeracao = resolvido.modelos.geracao;
   if (opts.kimi) {
-    requireEnv('MOONSHOT_API_KEY');
-    llmGen = new LLMClient({
+    requireEnv(['MOONSHOT_API_KEY']);
+    llm = new LLMClient({
       apiKey: process.env['MOONSHOT_API_KEY'],
       baseURL: config.llm.kimiBaseURL,
       supportsCache: false,
     });
+    modeloGeracao = config.llm.kimiModel;
+  } else if (opts.sonnet) {
+    requireEnv(['ANTHROPIC_API_KEY']); // modo qualidade é sempre Claude, mesmo no provedor openai
+    llm = new LLMClient();
+    modeloGeracao = 'claude-sonnet-5';
+  } else if (opts.fast) {
+    modeloGeracao = resolvido.modelos.rapido;
   }
-  process.stdout.write(`Gerando laudo (${genModel})… `);
+  process.stdout.write(`Gerando laudo (${modeloGeracao})… `);
   const regras = loadRegras(config, mask.id);
-  const gen = await generate(llmGen, {
+  const gen = await generate(llm, {
     mask,
     transcript,
     profileName: profile.name,
     profileBody: profile.body,
-    model: genModel,
+    model: modeloGeracao,
     regras,
   });
   console.log(fmt(gen.durationMs));
-  const genCost = estimateCostUSD(genModel, gen.usage);
+  const genCost = estimateCostUSD(modeloGeracao, gen.usage);
   const custoNaoEstimado = selCost === null || genCost === null;
 
   // Saída
@@ -202,7 +208,7 @@ async function runPipeline(opts: {
     transcript,
     maskId: mask.id,
     perfil: profile.name,
-    modelo: genModel,
+    modelo: modeloGeracao,
     confianca,
     latenciasMs: { stt: Math.round(sttMs), selecao: Math.round(selMs), geracao: Math.round(gen.durationMs) },
     custoUSD: Number(((selCost ?? 0) + (genCost ?? 0)).toFixed(4)),
@@ -267,13 +273,13 @@ function corpusFiles(
  * que passam a ser injetadas em toda geração daquela máscara.
  */
 async function aprender(target: string) {
-  requireEnv('ANTHROPIC_API_KEY');
   const config = loadConfig(APP_ROOT);
+  requireEnv(chavesNecessarias(config));
   const masks = loadMasks(config);
   const sanDir = sanitizedDir();
   const alvo = target === 'todos' ? masks.filter((m) => m.prefixos.length > 0) : masks.filter((m) => m.id === target);
   if (alvo.length === 0) throw new Error(`nenhuma máscara com prefixos para "${target}"`);
-  const llm = new LLMClient();
+  const { llm, modelos } = criarLLM(config);
   const regrasDir = join(config.masksDir, 'regras');
   mkdirSync(regrasDir, { recursive: true });
   for (const m of alvo) {
@@ -292,12 +298,12 @@ async function aprender(target: string) {
     process.stdout.write(`Aprendendo ${id} com ${files.length} laudos… `);
     const t0 = performance.now();
     const r = await llm.complete({
-      model: config.llm.generationModel,
+      model: modelos.geracao,
       system: [{ text: APRENDER_SYSTEM, cache: true }],
       user: `Tipo de exame: ${id}\n\n${corpus}`,
       maxTokens: 4000,
     });
-    const custoAprender = estimateCostUSD(config.llm.generationModel, r.usage);
+    const custoAprender = estimateCostUSD(modelos.geracao, r.usage);
     console.log(
       `${fmt(performance.now() - t0)} (custo ${custoAprender === null ? 'não estimado' : `≈ US$ ${custoAprender.toFixed(3)}`})`,
     );
@@ -317,24 +323,24 @@ async function aprender(target: string) {
  */
 async function destilar(id: string, prefixos: string[], filtro?: { contendo?: string; sem?: string }) {
   if (!id || prefixos.length === 0) throw new Error('uso: laudo destilar <id-novo> <PREFIXO1> [PREFIXO2…] [--contendo "…"] [--sem "…"]');
-  requireEnv('ANTHROPIC_API_KEY');
   const config = loadConfig(APP_ROOT);
+  requireEnv(chavesNecessarias(config));
   const sanDir = sanitizedDir();
   const files = corpusFiles(sanDir, prefixos, 40, filtro);
   if (files.length === 0) throw new Error(`nenhum laudo sanitizado com prefixos ${prefixos.join(', ')}`);
   const corpus = files
     .map((f, i) => `─── LAUDO ${i + 1} ───\n${readFileSync(join(sanDir, f), 'utf8').trim()}`)
     .join('\n\n');
-  const llm = new LLMClient();
+  const { llm, modelos } = criarLLM(config);
   process.stdout.write(`Destilando ${id} de ${files.length} laudos… `);
   const t0 = performance.now();
   const r = await llm.complete({
-    model: config.llm.generationModel,
+    model: modelos.geracao,
     system: [{ text: DESTILAR_SYSTEM, cache: true }],
     user: `id: ${id}\nprefixos: [${prefixos.join(', ')}]\n\n${corpus}`,
     maxTokens: 2500,
   });
-  const custoDestilar = estimateCostUSD(config.llm.generationModel, r.usage);
+  const custoDestilar = estimateCostUSD(modelos.geracao, r.usage);
   console.log(
     `${fmt(performance.now() - t0)} (custo ${custoDestilar === null ? 'não estimado' : `≈ US$ ${custoDestilar.toFixed(3)}`})`,
   );
@@ -348,9 +354,9 @@ async function destilar(id: string, prefixos: string[], filtro?: { contendo?: st
 
 /** Grava um comando de voz e o arquiva como caso do golden set, com teste imediato de seleção. */
 async function novoCaso() {
-  requireEnv('OPENAI_API_KEY');
-  requireEnv('ANTHROPIC_API_KEY');
   const config = loadConfig(APP_ROOT);
+  requireEnv(['OPENAI_API_KEY']); // sempre grava e transcreve, independente do provedor de LLM
+  requireEnv(chavesNecessarias(config));
   const masks = loadMasks(config);
   const goldenDir = resolve(APP_ROOT, 'eval', 'golden');
   const n = readdirSync(goldenDir).filter((f) => f.endsWith('.json')).length + 1;
@@ -387,8 +393,8 @@ async function novoCaso() {
     'utf8',
   );
 
-  const llm = new LLMClient();
-  const sel = await selectMask(llm, config.llm.selectionModel, san.texto, masks);
+  const { llm, modelos } = criarLLM(config);
+  const sel = await selectMask(llm, modelos.selecao, san.texto, masks);
   const got = sel.mask?.id ?? 'nenhuma';
   console.log(
     `${got === esperada ? '✓ seleção correta' : `✗ seleção divergente (obtido: ${got})`} (confiança: ${sel.confianca})`,
@@ -399,8 +405,8 @@ async function novoCaso() {
 async function runEval() {
   const config = loadConfig(APP_ROOT);
   const masks = loadMasks(config);
-  requireEnv('ANTHROPIC_API_KEY');
-  const llm = new LLMClient();
+  requireEnv(chavesNecessarias(config));
+  const { llm, modelos } = criarLLM(config);
   const goldenDir = resolve(APP_ROOT, 'eval', 'golden');
   const cases = readdirSync(goldenDir)
     .filter((f) => f.endsWith('.json'))
@@ -413,7 +419,7 @@ async function runEval() {
     let comando = c.comando as string | undefined;
     let sttMs = 0;
     if (!comando && c.audio) {
-      requireEnv('OPENAI_API_KEY');
+      requireEnv(['OPENAI_API_KEY']);
       const r = await stt.transcribe(join(goldenDir, c.audio));
       comando = r.text;
       sttMs = r.durationMs;
@@ -426,7 +432,7 @@ async function runEval() {
     if (sanCaso.avisos.length > 0) console.warn(`⚠️  ${c.id}: ${sanCaso.avisos.join(' | ')}`);
     comando = sanCaso.texto;
     try {
-      const sel = await selectMask(llm, config.llm.selectionModel, comando, masks);
+      const sel = await selectMask(llm, modelos.selecao, comando, masks);
       const got = sel.mask?.id ?? 'nenhuma';
       const ok = got === c.mask_esperada;
       if (ok) acertos++;

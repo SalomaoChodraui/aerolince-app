@@ -10,7 +10,8 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSy
 import { join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import { loadConfig } from '../src/core/config/schema.js';
-import { LLMClient, estimateCostUSD } from '../src/core/llm/anthropic.js';
+import { estimateCostUSD } from '../src/core/llm/anthropic.js';
+import { criarLLM } from '../src/core/llm/factory.js';
 
 const LIMITE_KB = Number(process.argv[2] ?? 20);
 const config = loadConfig(process.cwd());
@@ -28,7 +29,7 @@ const SYSTEM = `Você compacta frasários de laudo radiológico. Receberá um do
 - Alvo: as ~150-250 frases mais úteis e distintas. Priorize cobertura de patologias diferentes, não variações da mesma.
 - Responda SÓ com o markdown compactado (sem frontmatter — ele será preservado à parte).`;
 
-const llm = new LLMClient();
+const { llm, modelos } = criarLLM(config);
 let total = 0;
 
 for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
@@ -42,12 +43,12 @@ for (const f of readdirSync(dir).filter((x) => x.endsWith('.md')).sort()) {
   const { data, content } = matter(raw);
   process.stdout.write(`compactando ${f} (${kb.toFixed(0)} KB)… `);
   const r = await llm.complete({
-    model: config.llm.generationModel,
+    model: modelos.geracao,
     system: [{ text: SYSTEM, cache: true }],
     user: content,
     maxTokens: 8000,
   });
-  const custo = estimateCostUSD(config.llm.generationModel, r.usage);
+  const custo = estimateCostUSD(modelos.geracao, r.usage);
   if (custo !== null) total += custo;
   renameSync(path, join(originais, f));
   const fm = Object.entries(data)
