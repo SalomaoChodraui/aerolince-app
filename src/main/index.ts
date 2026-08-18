@@ -247,10 +247,27 @@ function abrirEstilo(): void {
 
 // ── Tray ─────────────────────────────────────────────────────────────────────
 function trayIcon(): Electron.NativeImage {
-  const p = join(import.meta.dirname, '../../build/trayTemplate.png');
-  const img = existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createFromPath(join(import.meta.dirname, '../../build/icon.png')).resize({ width: 18, height: 18 });
-  if (process.platform === 'darwin') img.setTemplateImage(true);
-  return img;
+  const buildDir = join(import.meta.dirname, '../../build');
+  const appIcon = nativeImage.createFromPath(join(buildDir, 'icon.png'));
+
+  // O PNG template e preto de proposito: no macOS o sistema usa apenas o alpha
+  // e adapta a cor ao tema da barra. No Windows, porem, esse mesmo preto fica
+  // praticamente invisivel na bandeja escura. La usamos o icone colorido do app.
+  if (process.platform !== 'darwin') {
+    return appIcon.resize({ width: 16, height: 16, quality: 'best' });
+  }
+
+  const templatePath = join(buildDir, 'trayTemplate.png');
+  if (existsSync(templatePath)) {
+    const template = nativeImage.createFromPath(templatePath);
+    if (!template.isEmpty()) {
+      template.setTemplateImage(true);
+      return template;
+    }
+  }
+
+  // Fallback visivel se o asset template faltar ou estiver corrompido no pacote.
+  return appIcon.resize({ width: 18, height: 18, quality: 'best' });
 }
 
 function montarTray(): void {
@@ -262,6 +279,10 @@ function montarTray(): void {
 
 function atualizarMenuTray(): void {
   if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate(itensMenuAerolince()));
+}
+
+function itensMenuAerolince(): Electron.MenuItemConstructorOptions[] {
   const macros = cfg().macros.filter((m) => m.comando.trim());
   const itens: Electron.MenuItemConstructorOptions[] = [
     { label: 'Ditar laudo (atalho global)', click: () => floatWin?.webContents.send('atalho-toggle') },
@@ -287,7 +308,56 @@ function atualizarMenuTray(): void {
     { type: 'separator' },
     { label: 'Sair do Aerolince', click: () => app.quit() },
   );
-  tray.setContextMenu(Menu.buildFromTemplate(itens));
+  return itens;
+}
+
+/**
+ * Menu de contingencia no proprio balao: no Windows a bandeja pode ir para a
+ * area de icones ocultos; no macOS pode sumir quando a barra esta lotada.
+ * O usuario continua tendo acesso a configuracoes e, principalmente, a Sair.
+ */
+function abrirMenuBalao(): void {
+  if (!floatWin || floatWin.isDestroyed()) return;
+  Menu.buildFromTemplate(itensMenuAerolince()).popup({ window: floatWin });
+}
+
+/** Menu nativo do macOS: garante o atalho padrao Cmd+Q quando o app esta ativo. */
+function montarMenuAplicativo(): void {
+  if (process.platform !== 'darwin') return;
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { label: 'Configurações…', accelerator: 'CmdOrCtrl+,', click: abrirSettings },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { label: 'Sair do Aerolince', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
+        ],
+      },
+      {
+        label: 'Editar',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' },
+        ],
+      },
+      {
+        label: 'Janela',
+        submenu: [{ role: 'minimize' }, { role: 'close' }],
+      },
+    ]),
+  );
 }
 
 // ── Atalho global ────────────────────────────────────────────────────────────
@@ -564,6 +634,7 @@ function registrarIpc(): void {
   });
   // Arraste manual do botão flutuante (clique = ditar, arraste = mover)
   ipcMain.on('balao-mover', (_e, x: number, y: number) => floatWin?.setPosition(Math.round(x), Math.round(y)));
+  ipcMain.on('balao-menu', abrirMenuBalao);
   // Scroll no balão (clique/arraste continuam por outro canal): aplica a opacidade
   // JÁ calculada e clampeada pelo renderer — efeito imediato, sem tocar disco.
   // Fronteira IPC: nunca confiar no renderer, mesmo para um ajuste cosmético.
@@ -737,6 +808,7 @@ app.whenReady().then(() => {
   createFloat(c);
   createResult(c);
   montarTray();
+  montarMenuAplicativo();
   registrarAtalho(c);
   registrarIpc();
   if (!c.onboardingConcluido) abrirOnboarding();

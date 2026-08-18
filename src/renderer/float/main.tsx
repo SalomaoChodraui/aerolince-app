@@ -319,11 +319,19 @@ function App() {
 
   // Clique = ditar; arrastar = mover a janela (distinção por movimento do mouse)
   function onMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
     drag.current = {
       offX: e.screenX - window.screenX,
       offY: e.screenY - window.screenY,
       moved: false,
     };
+  }
+
+  function onContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    // O mouseup do clique secundario nao pode cair no fluxo de ditado.
+    drag.current = null;
+    window.aerolince.abrirMenuBalao();
   }
   useEffect(() => {
     function onMove(e: MouseEvent) {
@@ -438,11 +446,17 @@ function App() {
               : msgErro.current
                 ? `${msgErro.current} — clique para tentar de novo`
                 : 'Não consegui gerar o laudo — clique para tentar de novo'
-            : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Arraste para mover. Scroll ajusta a transparência.';
+            : 'Clique ou Cmd/Ctrl+Shift+D para ditar. Botão direito abre o menu. Arraste para mover. Scroll ajusta a transparência.';
 
   return (
     <>
-      <button ref={botaoRef} className={`botao ${fase}`} onMouseDown={onMouseDown} title={titulo}>
+      <button
+        ref={botaoRef}
+        className={`botao ${fase}`}
+        onMouseDown={onMouseDown}
+        onContextMenu={onContextMenu}
+        title={titulo}
+      >
         <Icone fase={fase} />
       </button>
       {fase === 'gravando' && <div className="tempo">{segundos}s</div>}
