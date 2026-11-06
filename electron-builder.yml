@@ -1,5 +1,7 @@
 appId: com.aerolince.laudo
 productName: Aerolince
+# O app é em português: só esses idiomas do Electron (menos peso e menos arquivos para assinar).
+electronLanguages: [pt-BR, pt, en]
 directories:
   output: release
 files:
@@ -17,9 +19,13 @@ mac:
     - target: dmg
       arch: [arm64]
   category: public.app-category.medical
-  # Fase piloto: sem assinatura (o certificado Apple Development do Keychain
-  # não serve para distribuição e quebra o build). Assinatura/notarização: Fase 2.
-  identity: null
+  # Developer ID + hardened runtime. A notarização usa o perfil do notarytool
+  # no Keychain: APPLE_KEYCHAIN_PROFILE=notary npm run dist:mac
+  identity: 'SALOMAO Filho (RW5PXM3VUN)'
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
   extendInfo:
     NSMicrophoneUsageDescription: 'O Aerolince usa o microfone para o ditado dos laudos.'
 win:

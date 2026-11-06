@@ -38,5 +38,5 @@ Para pôr em produção na máquina do médico:
 2. Substitua a `biblioteca-mascaras/` de exemplo pela biblioteca real (máscaras + `regras/` + `frasario/`).
 3. Reabra o app.
 
-Apps sem assinatura (fase piloto): no mac, clique-direito → Abrir na primeira vez;
-no Windows, SmartScreen → "Mais informações" → "Executar assim mesmo".
+No Mac, o DMG é assinado com Developer ID e notarizado: abre direto.
+No Windows (sem assinatura), SmartScreen → "Mais informações" → "Executar assim mesmo".

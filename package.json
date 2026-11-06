@@ -12,6 +12,7 @@
     "build:app": "electron-vite build",
     "predist": "node scripts/copiar-assets-vad.mjs",
     "dist": "electron-vite build && electron-builder --mac --win",
+    "dist:mac": "electron-vite build && APPLE_KEYCHAIN_PROFILE=${APPLE_KEYCHAIN_PROFILE:-notary} electron-builder --mac -c.directories.output=$HOME/Library/Developer/Aerolince/release && scripts/notarizar-dmg.sh",
     "laudo": "tsx src/cli/index.ts",
     "sanitize": "tsx scripts/sanitize-pdfs.ts",
     "test": "vitest run",
